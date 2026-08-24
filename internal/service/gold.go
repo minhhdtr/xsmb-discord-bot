@@ -1,0 +1,126 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/provider"
+)
+
+// Gold serves the current board behind a short cache. Nothing here touches
+// Postgres: a gold price is only ever "now", unlike a draw.
+type Gold struct {
+	src   provider.GoldProvider
+	ttl   time.Duration
+	grace time.Duration
+	now   func() time.Time
+	log   *slog.Logger
+
+	fetchMu sync.Mutex // serialises refreshes, so a burst causes one request
+
+	mu     sync.RWMutex
+	board  domain.GoldBoard
+	loaded time.Time
+
+	histMu sync.Mutex
+	hist   map[string]cachedSeries
+}
+
+// cachedSeries is one memoised history request.
+type cachedSeries struct {
+	series domain.GoldSeries
+	loaded time.Time
+}
+
+// NewGold builds the gold service. ttl is how long a board is reused; grace is
+// how long a stale one may still be served when the source is down.
+func NewGold(src provider.GoldProvider, ttl, grace time.Duration, clock func() time.Time, log *slog.Logger) *Gold {
+	if ttl <= 0 {
+		ttl = 2 * time.Minute
+	}
+	if grace <= 0 {
+		grace = 30 * time.Minute
+	}
+	if clock == nil {
+		clock = func() time.Time { return time.Now().In(domain.Location()) }
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Gold{src: src, ttl: ttl, grace: grace, now: clock, log: log,
+		hist: make(map[string]cachedSeries)}
+}
+
+// Board returns the current board, refetching once the cache expires. If the
+// source fails a recent board is served instead of an error - the embed
+// prints its timestamp so the age is visible.
+func (g *Gold) Board(ctx context.Context) (domain.GoldBoard, error) {
+	if board, ok := g.cached(g.ttl); ok {
+		return board, nil
+	}
+
+	g.fetchMu.Lock()
+	defer g.fetchMu.Unlock()
+
+	// Another caller may have refreshed while this one waited for the lock.
+	if board, ok := g.cached(g.ttl); ok {
+		return board, nil
+	}
+
+	board, err := g.src.Board(ctx)
+	if err != nil {
+		if stale, ok := g.cached(g.grace); ok {
+			g.log.Warn("serving a stale gold board", "error", err,
+				"age", g.now().Sub(stale.FetchedAt).Round(time.Second))
+			return stale, nil
+		}
+		return domain.GoldBoard{}, err
+	}
+
+	g.mu.Lock()
+	g.board, g.loaded = board, g.now()
+	g.mu.Unlock()
+	return board, nil
+}
+
+// History is cached much longer than the live board - a closed day can't
+// change.
+func (g *Gold) History(ctx context.Context, code string, days int) (domain.GoldSeries, error) {
+	const historyTTL = 30 * time.Minute
+	key := fmt.Sprintf("%s|%d", strings.ToUpper(code), days)
+
+	g.histMu.Lock()
+	defer g.histMu.Unlock()
+
+	if entry, ok := g.hist[key]; ok && g.now().Sub(entry.loaded) <= historyTTL {
+		return entry.series, nil
+	}
+	series, err := g.src.History(ctx, code, days)
+	if err != nil {
+		if entry, ok := g.hist[key]; ok {
+			g.log.Warn("serving a stale gold history", "code", code, "error", err)
+			return entry.series, nil
+		}
+		return domain.GoldSeries{}, err
+	}
+	g.hist[key] = cachedSeries{series: series, loaded: g.now()}
+	return series, nil
+}
+
+// cached returns the held board if it is younger than window.
+func (g *Gold) cached(window time.Duration) (domain.GoldBoard, bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if !g.board.Valid() || g.loaded.IsZero() {
+		return domain.GoldBoard{}, false
+	}
+	if g.now().Sub(g.loaded) > window {
+		return domain.GoldBoard{}, false
+	}
+	return g.board, true
+}

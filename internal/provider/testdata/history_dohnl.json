@@ -1,0 +1,397 @@
+{
+  "success": true,
+  "days": 30,
+  "type": "DOHNL",
+  "history": [
+    {
+      "date": "2026-08-22",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 144000000,
+          "sell": 147000000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 1
+        }
+      }
+    },
+    {
+      "date": "2026-08-21",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 144000000,
+          "sell": 147000000,
+          "day_change_buy": 1000000,
+          "day_change_sell": 1000000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-20",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 143000000,
+          "sell": 146000000,
+          "day_change_buy": 3300000,
+          "day_change_sell": 3300000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-19",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 139700000,
+          "sell": 142700000,
+          "day_change_buy": -1600000,
+          "day_change_sell": -1600000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-08-18",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141300000,
+          "sell": 144300000,
+          "day_change_buy": 100000,
+          "day_change_sell": 100000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-17",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141200000,
+          "sell": 144200000,
+          "day_change_buy": 200000,
+          "day_change_sell": 200000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-16",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141000000,
+          "sell": 144000000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 1
+        }
+      }
+    },
+    {
+      "date": "2026-08-15",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141000000,
+          "sell": 144000000,
+          "day_change_buy": 700000,
+          "day_change_sell": 700000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-08-14",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 140300000,
+          "sell": 143300000,
+          "day_change_buy": -1000000,
+          "day_change_sell": -1000000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-08-13",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141300000,
+          "sell": 144300000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-12",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141300000,
+          "sell": 144300000,
+          "day_change_buy": 800000,
+          "day_change_sell": 800000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-11",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 140500000,
+          "sell": 143500000,
+          "day_change_buy": -600000,
+          "day_change_sell": -600000,
+          "updates": 5
+        }
+      }
+    },
+    {
+      "date": "2026-08-10",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141100000,
+          "sell": 144100000,
+          "day_change_buy": 100000,
+          "day_change_sell": 100000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-09",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141000000,
+          "sell": 144000000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 1
+        }
+      }
+    },
+    {
+      "date": "2026-08-08",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 141000000,
+          "sell": 144000000,
+          "day_change_buy": 1800000,
+          "day_change_sell": 1800000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-08-07",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 139200000,
+          "sell": 142200000,
+          "day_change_buy": -500000,
+          "day_change_sell": -500000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-08-06",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 139700000,
+          "sell": 142700000,
+          "day_change_buy": 900000,
+          "day_change_sell": 900000,
+          "updates": 5
+        }
+      }
+    },
+    {
+      "date": "2026-08-05",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 138800000,
+          "sell": 141800000,
+          "day_change_buy": 1300000,
+          "day_change_sell": 1300000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-04",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137500000,
+          "sell": 140500000,
+          "day_change_buy": 0,
+          "day_change_sell": -500000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-03",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137500000,
+          "sell": 141000000,
+          "day_change_buy": 500000,
+          "day_change_sell": 0,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-08-02",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137000000,
+          "sell": 141000000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 1
+        }
+      }
+    },
+    {
+      "date": "2026-08-01",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137000000,
+          "sell": 141000000,
+          "day_change_buy": -900000,
+          "day_change_sell": -900000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-07-31",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137900000,
+          "sell": 141900000,
+          "day_change_buy": 200000,
+          "day_change_sell": 200000,
+          "updates": 5
+        }
+      }
+    },
+    {
+      "date": "2026-07-30",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137700000,
+          "sell": 141700000,
+          "day_change_buy": 200000,
+          "day_change_sell": 200000,
+          "updates": 3
+        }
+      }
+    },
+    {
+      "date": "2026-07-29",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137500000,
+          "sell": 141500000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 4
+        }
+      }
+    },
+    {
+      "date": "2026-07-28",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137500000,
+          "sell": 141500000,
+          "day_change_buy": -1500000,
+          "day_change_sell": -1500000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-07-27",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 139000000,
+          "sell": 143000000,
+          "day_change_buy": 1500000,
+          "day_change_sell": 1500000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-07-26",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137500000,
+          "sell": 141500000,
+          "day_change_buy": 0,
+          "day_change_sell": 0,
+          "updates": 1
+        }
+      }
+    },
+    {
+      "date": "2026-07-25",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 137500000,
+          "sell": 141500000,
+          "day_change_buy": 2000000,
+          "day_change_sell": 1000000,
+          "updates": 2
+        }
+      }
+    },
+    {
+      "date": "2026-07-24",
+      "prices": {
+        "DOHNL": {
+          "name": "DOJI Hanoi",
+          "buy": 135500000,
+          "sell": 140500000,
+          "day_change_buy": 500000,
+          "day_change_sell": 500000,
+          "updates": 5
+        }
+      }
+    }
+  ]
+}

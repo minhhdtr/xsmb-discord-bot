@@ -1,0 +1,14 @@
+{"success":true,"timestamp":1787295606,"time":"14:00","date":"2026-08-21","count":12,
+"prices":{
+"XAUUSD":{"name":"World Gold (XAU/USD)","buy":4565.4,"sell":0,"change_buy":7.599999999999454,"change_sell":0,"currency":"USD"},
+"BT9999NTT":{"name":"Bao Tin 9999","buy":143900000,"sell":147900000,"change_buy":900000,"change_sell":900000,"currency":"VND"},
+"VNGSJC":{"name":"VN Gold SJC","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"BTSJC":{"name":"Bao Tin SJC","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"DOJINHTV":{"name":"DOJI Jewelry","buy":143800000,"sell":147800000,"change_buy":-200000,"change_sell":-200000,"currency":"VND"},
+"DOHCML":{"name":"DOJI HCM","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"DOHNL":{"name":"DOJI Hanoi","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"SJ9999":{"name":"SJC Ring","buy":143100000,"sell":146100000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"VIETTINMSJC":{"name":"Viettin SJC","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"SJL1L10":{"name":"SJC 9999","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"PQHN24NTT":{"name":"PNJ 24K","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"},
+"PQHNVM":{"name":"PNJ Hanoi","buy":143600000,"sell":146600000,"change_buy":600000,"change_sell":600000,"currency":"VND"}}}
