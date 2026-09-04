@@ -9,11 +9,13 @@ import (
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
 )
 
-// Stats are cached until a new draw lands. That's the only thing that can
-// change them, so the newest stored day works as an exact cache key.
+// Stats are cached until the archive changes. Both halves of the key matter:
+// the newest stored day, and a counter of every write. Backfill fills gaps
+// behind the newest day, so the date alone would leave answers stale.
 type statsCache struct {
 	mu       sync.Mutex
 	builtFor time.Time
+	builtGen uint64
 	entries  map[string]*statsEntry
 }
 
@@ -31,14 +33,17 @@ type statsEntry struct {
 func cachedStat[T any](ctx context.Context, s *Service, key string, build func() (T, error)) (T, error) {
 	var zero T
 
+	// Read the generation first. A write that lands during the build then
+	// shows up as a mismatch below, rather than being silently absorbed.
+	gen := s.archiveChanged()
 	newest, _, err := s.store.LatestDraw(ctx)
 	if err != nil {
 		return zero, err
 	}
 
 	s.stats.mu.Lock()
-	if !s.stats.builtFor.Equal(newest) || s.stats.entries == nil {
-		s.stats.builtFor = newest
+	if !s.stats.builtFor.Equal(newest) || s.stats.builtGen != gen || s.stats.entries == nil {
+		s.stats.builtFor, s.stats.builtGen = newest, gen
 		s.stats.entries = make(map[string]*statsEntry)
 	}
 	if existing, running := s.stats.entries[key]; running {
@@ -64,13 +69,17 @@ func cachedStat[T any](ctx context.Context, s *Service, key string, build func()
 	entry.value, entry.err = value, err
 	close(entry.done)
 
-	if err != nil {
-		// Don't remember failures, or one blip poisons the key until the next draw.
+	if err != nil || s.archiveChanged() != gen {
+		// Drop the entry on failure, so one blip doesn't poison the key until
+		// the next draw; and on a concurrent write, since this answer was
+		// computed against an archive that no longer exists.
 		s.stats.mu.Lock()
 		if s.stats.entries[key] == entry {
 			delete(s.stats.entries, key)
 		}
 		s.stats.mu.Unlock()
+	}
+	if err != nil {
 		return zero, err
 	}
 	return value, nil

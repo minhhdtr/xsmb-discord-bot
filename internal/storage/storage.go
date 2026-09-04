@@ -50,8 +50,9 @@ type Store interface {
 
 	Stats(ctx context.Context) (Stats, error)
 
-	// LatestDraw is the newest day held. Also the cache key for the statistics
-	// below - they only change when a new draw lands.
+	// LatestDraw is the newest day held. Half of the cache key for the
+	// statistics below; the service pairs it with its own write counter,
+	// since backfill changes the archive without moving this date.
 	LatestDraw(ctx context.Context) (time.Time, bool, error)
 
 	// LoGan ranks tails by how long they've gone unseen. DeGan does the same for

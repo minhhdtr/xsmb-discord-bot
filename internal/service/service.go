@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
@@ -34,8 +35,16 @@ type Service struct {
 	mu       sync.Mutex
 	inFlight map[string]*flight
 
+	// archiveGen counts every write to the archive. Backfill fills gaps
+	// behind the newest day, so max(draw_date) alone cannot tell the
+	// statistics cache that the archive moved under it.
+	archiveGen atomic.Uint64
+
 	stats statsCache
 }
+
+// archiveChanged reports the current archive generation, for the stats cache.
+func (s *Service) archiveChanged() uint64 { return s.archiveGen.Load() }
 
 // flight lets concurrent requests for the same day share one crawl.
 type flight struct {
@@ -128,6 +137,8 @@ func (s *Service) crawl(ctx context.Context, day time.Time) (domain.Draw, error)
 		if err := s.store.SaveDraw(ctx, outcome.Draw); err != nil {
 			// Serving a good result matters more than caching it.
 			s.log.Error("cannot store draw", "date", domain.FormatISO(day), "error", err)
+		} else {
+			s.archiveGen.Add(1)
 		}
 		return outcome.Draw, nil
 
@@ -137,6 +148,8 @@ func (s *Service) crawl(ctx context.Context, day time.Time) (domain.Draw, error)
 		}
 		if err := s.store.MarkAbsent(ctx, day); err != nil {
 			s.log.Error("cannot mark absence", "date", domain.FormatISO(day), "error", err)
+		} else {
+			s.archiveGen.Add(1)
 		}
 		return domain.Draw{}, fmt.Errorf("%s: %w", domain.FormatVN(day), ErrNoResult)
 
@@ -145,6 +158,8 @@ func (s *Service) crawl(ctx context.Context, day time.Time) (domain.Draw, error)
 			// The page exists and is due, but holds nothing. Treat as absent.
 			if err := s.store.MarkAbsent(ctx, day); err != nil {
 				s.log.Error("cannot mark absence", "date", domain.FormatISO(day), "error", err)
+			} else {
+				s.archiveGen.Add(1)
 			}
 			return domain.Draw{}, fmt.Errorf("%s: %w", domain.FormatVN(day), ErrNoResult)
 		}
