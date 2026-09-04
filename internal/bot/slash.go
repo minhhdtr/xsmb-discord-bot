@@ -163,6 +163,10 @@ func SlashCommands(now time.Time) []*discordgo.ApplicationCommand {
 			}},
 		},
 		{
+			Name:        "quaythu",
+			Description: "Quay thử một bảng XSMB cho vui — số ngẫu nhiên, không phải kết quả thật",
+		},
+		{
 			Name:        "huongdan",
 			Description: "Danh sách lệnh",
 			Options: []*discordgo.ApplicationCommandOption{{
@@ -234,6 +238,9 @@ func SlashRequest(data discordgo.ApplicationCommandInteractionData) (kind Kind, 
 			args = []string{sub.Name}
 		}
 		return KindLottery, args, false
+
+	case "quaythu":
+		return KindLottery, []string{"quaythu"}, false
 
 	case "thongbao":
 		return KindLottery, []string{optString(data.Options, "trangthai")}, true
@@ -320,7 +327,18 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 	}
 	if _, err := s.InteractionResponseEdit(i.Interaction, edit); err != nil {
 		b.log.Error("cannot send interaction reply", "command", i.ApplicationCommandData().Name, "error", err)
+		return
 	}
+
+	// Interaction edits go to a webhook route, which is a different rate limit
+	// bucket from editing messages in the channel. Two spins in one channel
+	// therefore do not queue behind each other. The token lasts fifteen
+	// minutes, far longer than any frame sequence.
+	b.playFrames(reply, func(frame *discordgo.MessageEmbed) error {
+		_, err := s.InteractionResponseEdit(i.Interaction,
+			&discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{frame}})
+		return err
+	})
 }
 
 // autocompleteTimeout is tight because Discord expects suggestions while the

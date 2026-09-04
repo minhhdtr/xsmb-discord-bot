@@ -32,9 +32,34 @@ func Table(prizes domain.Prizes) string {
 	if !prizes.Valid() {
 		return ""
 	}
+	return TableOf(prizes.Numbers())
+}
+
+// TableOf lays out 27 cells the same way, without needing a valid Prizes. A
+// blank cell becomes dots the width of the number that goes there, which is
+// what lets a spin show a board that is only part drawn.
+func TableOf(cells []string) string {
+	if len(cells) != domain.TotalNumbers {
+		return ""
+	}
+	filled := make([]string, len(cells))
+	at := 0
+	for _, spec := range domain.PrizeLayout {
+		for n := 0; n < spec.Count; n++ {
+			if cells[at] == "" {
+				filled[at] = strings.Repeat("·", spec.Digits)
+			} else {
+				filled[at] = cells[at]
+			}
+			at++
+		}
+	}
+
 	var b strings.Builder
-	for tier := range domain.PrizeLayout {
-		numbers := prizes.Group(tier)
+	offset := 0
+	for tier, spec := range domain.PrizeLayout {
+		numbers := filled[offset : offset+spec.Count]
+		offset += spec.Count
 		for start, line := 0, 0; start < len(numbers); start, line = start+perRow[tier], line+1 {
 			end := start + perRow[tier]
 			if end > len(numbers) {

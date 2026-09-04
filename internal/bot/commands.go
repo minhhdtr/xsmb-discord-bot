@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/chart"
@@ -35,6 +37,11 @@ type Router struct {
 	prefix     string
 	goldPrefix string
 	log        *slog.Logger
+
+	// spins reserves a channel while a quay thử plays out there, so two spins
+	// cannot interleave their edits and burn the channel's edit budget.
+	spinMu sync.Mutex
+	spins  map[string]time.Time
 }
 
 // NewRouter builds a command router. gold may be nil.
@@ -43,7 +50,8 @@ func NewRouter(svc *service.Service, gold *service.Gold, store storage.Store, pr
 		log = slog.Default()
 	}
 	return &Router{svc: svc, gold: gold, store: store,
-		prefix: prefix, goldPrefix: goldPrefix, log: log}
+		prefix: prefix, goldPrefix: goldPrefix, log: log,
+		spins: make(map[string]time.Time)}
 }
 
 // Kind says which command a message invoked.
@@ -76,6 +84,12 @@ func (r *Router) Match(content string) (Kind, []string) {
 type Reply struct {
 	Embed *discordgo.MessageEmbed
 	File  *discordgo.File
+
+	// Frames are later states of the same message, shown one after another by
+	// editing it. Embed is the first. The router builds them all up front and
+	// the gateway handler does the waiting, so nothing here needs a session.
+	Frames []*discordgo.MessageEmbed
+	Pace   time.Duration
 }
 
 // embed wraps a reply with nothing attached. The helpers below build embeds
@@ -348,6 +362,8 @@ func (r *Router) Handle(ctx context.Context, req Request) Reply {
 		return embed(r.specialMonth(ctx, req.Args[1:]))
 	case "ngay":
 		return embed(r.dayReport(ctx, req.Args[1:]))
+	case "quaythu", "quaythử":
+		return r.quayThu(req.ChannelID)
 	default:
 		return embed(r.byDate(ctx, strings.Join(req.Args, " ")))
 	}
@@ -602,6 +618,7 @@ func (r *Router) resultHelp() string {
 		"`/xsmb` — kết quả mới nhất, trước 18h35 thì trả hôm qua",
 		"`/xsmb ngay:14/08/2026` — một ngày, nhận cả `14-08-2026` và `2026-08-14`",
 		"`/thongbao trangthai:bật` — bật thông báo 18h35 cho kênh này",
+		"`/quaythu` — quay thử một bảng cho vui: số ngẫu nhiên, không lưu vào kho",
 		"_prefix: `" + p + "`, `" + p + " 14/08/2026`, `" + p + " sub`_",
 	}, "\n")
 }

@@ -139,8 +139,38 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if reply.File != nil {
 		message.Files = []*discordgo.File{reply.File}
 	}
-	if _, err := s.ChannelMessageSendComplex(m.ChannelID, message); err != nil {
+	sent, err := s.ChannelMessageSendComplex(m.ChannelID, message)
+	if err != nil {
 		b.log.Error("cannot send reply", "channel", m.ChannelID, "error", err)
+		return
+	}
+	b.playFrames(reply, func(frame *discordgo.MessageEmbed) error {
+		_, err := s.ChannelMessageEditEmbed(m.ChannelID, sent.ID, frame)
+		return err
+	})
+}
+
+// playFrames edits a message through the rest of a reply's frames, waiting
+// Pace between each. It runs on the gateway handler's own goroutine, which
+// discordgo already gives one of per event, so a spin holds up nothing else.
+//
+// A failed edit stops the playback. Carrying on would mean waiting out the
+// remaining frames to show a board that never updates, and the usual cause -
+// the message being deleted - will only fail again.
+func (b *Bot) playFrames(reply Reply, edit func(*discordgo.MessageEmbed) error) {
+	if len(reply.Frames) == 0 {
+		return
+	}
+	pace := reply.Pace
+	if pace <= 0 {
+		pace = time.Second
+	}
+	for _, frame := range reply.Frames {
+		time.Sleep(pace)
+		if err := edit(frame); err != nil {
+			b.log.Warn("stopped a frame sequence", "error", err)
+			return
+		}
 	}
 }
 
