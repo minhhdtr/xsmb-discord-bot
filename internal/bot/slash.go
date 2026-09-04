@@ -87,12 +87,25 @@ func SlashCommands(now time.Time) []*discordgo.ApplicationCommand {
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
 					Name:        "tanso",
 					Description: "Tần suất về của cả 100 số",
-					Options: []*discordgo.ApplicationCommandOption{{
-						Type:        discordgo.ApplicationCommandOptionInteger,
-						Name:        "ngay",
-						Description: "Cửa sổ tính, mặc định 30 ngày",
-						MinValue:    ptrFloat(1),
-					}},
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionInteger,
+							Name:        "ngay",
+							Description: "Cửa sổ tính, mặc định 30 ngày",
+							MinValue:    ptrFloat(1),
+						},
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "kieu",
+							Description: "Gom 100 số thành 10 ô. Bỏ trống thì liệt kê từng số.",
+							Choices: []*discordgo.ApplicationCommandOptionChoice{
+								{Name: "đầu", Value: "dau"},
+								{Name: "đuôi", Value: "duoi"},
+								{Name: "tổng", Value: "tong"},
+								{Name: "chạm", Value: "cham"},
+							},
+						},
+					},
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
@@ -199,6 +212,9 @@ func SlashRequest(data discordgo.ApplicationCommandInteractionData) (kind Kind, 
 			args = []string{"tanso"}
 			if days, ok := optInt(sub.Options, "ngay"); ok {
 				args = append(args, strconv.Itoa(days))
+			}
+			if kind := optString(sub.Options, "kieu"); kind != "" {
+				args = append(args, kind)
 			}
 		case "lo":
 			args = []string{"lo", optString(sub.Options, "so")}

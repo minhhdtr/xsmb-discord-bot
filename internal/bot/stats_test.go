@@ -125,8 +125,35 @@ func TestTanSoCommandAndWindow(t *testing.T) {
 	if custom := text(t, r, "tanso", "90"); !strings.Contains(custom, "90 ngày") {
 		t.Fatalf("custom window ignored:\n%s", custom)
 	}
-	if bad := text(t, r, "tanso", "abc"); !strings.Contains(bad, "Không đọc được số ngày") {
-		t.Fatalf("bad window accepted:\n%s", bad)
+	if bad := text(t, r, "tanso", "abc"); !strings.Contains(bad, "Không đọc được tham số") {
+		t.Fatalf("bad argument accepted:\n%s", bad)
+	}
+	if bad := text(t, r, "tanso", "0"); !strings.Contains(bad, "Không đọc được số ngày") {
+		t.Fatalf("a non-positive window was accepted:\n%s", bad)
+	}
+}
+
+// The grouping can come before or after the window, and on its own.
+func TestTanSoCommandGroups(t *testing.T) {
+	r := statsRouter(t, [][]string{{"01"}, {"12"}, {"13"}})
+
+	for _, args := range [][]string{
+		{"tanso", "dau"},
+		{"tanso", "90", "dau"},
+		{"tanso", "dau", "90"},
+	} {
+		out := text(t, r, args...)
+		if !strings.Contains(out, "Tần suất đầu") {
+			t.Fatalf("%v did not group:\n%s", args, out)
+		}
+		if !strings.Contains(out, "Chia đều là") {
+			t.Fatalf("%v is missing the even-split note:\n%s", args, out)
+		}
+	}
+
+	// Without a grouping the per-number listing is unchanged.
+	if out := text(t, r, "tanso"); !strings.Contains(out, "Về nhiều nhất") {
+		t.Fatalf("the ungrouped form changed:\n%s", out)
 	}
 }
 

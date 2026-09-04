@@ -381,20 +381,42 @@ const defaultWindow = 30
 
 func (r *Router) tanSo(ctx context.Context, args []string) *discordgo.MessageEmbed {
 	days := defaultWindow
-	if len(args) > 0 {
-		n, err := strconv.Atoi(args[0])
-		if err != nil || n < 1 {
-			return NoticeEmbed("Không đọc được số ngày",
-				fmt.Sprintf("Mình không hiểu %q.\nDùng dạng `%s tanso 90`.", args[0], r.prefix), false)
+	grouping, grouped := domain.ByHead, false
+
+	// Either argument can come first: a number is a window, a word is a
+	// grouping. Insisting on an order would only make the command harder to
+	// remember.
+	for _, arg := range args {
+		if n, err := strconv.Atoi(arg); err == nil {
+			if n < 1 {
+				return NoticeEmbed("Không đọc được số ngày",
+					fmt.Sprintf("%q phải là số ngày dương.\nDùng dạng `%s tanso 90`.",
+						arg, r.prefix), false)
+			}
+			days = n
+			continue
 		}
-		days = n
+		g, err := domain.ParseGrouping(arg)
+		if err != nil {
+			// The argument is neither form, so naming only one of them would
+			// send the reader looking in the wrong place.
+			return NoticeEmbed("Không đọc được tham số",
+				fmt.Sprintf("Mình không hiểu %q.\nTham số là số ngày, hoặc kiểu gom: "+
+					"`dau`, `duoi`, `tong`, `cham`.\nDùng dạng `%s tanso 90 dau`.",
+					arg, r.prefix), false)
+		}
+		grouping, grouped = g, true
 	}
+
 	freq, err := r.svc.Frequency(ctx, days)
 	if err != nil {
 		r.log.Error("frequency failed", "days", days, "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
 	}
 	size, _ := r.archive(ctx)
+	if grouped {
+		return GroupedFrequencyEmbed(domain.GroupFrequency(freq, grouping), days, size)
+	}
 	return FrequencyEmbed(freq, days, size)
 }
 
@@ -590,6 +612,7 @@ func (r *Router) statsHelp() string {
 		"`/thongke logan` — lô lâu chưa về nhất, kèm kỷ lục gan",
 		"`/thongke degan` — như trên nhưng chỉ tính giải đặc biệt",
 		"`/thongke tanso ngay:90` — tần suất, mặc định 30 ngày",
+		"`/thongke tanso kieu:đầu` — gom 100 số thành 10 ô: đầu, đuôi, tổng, chạm",
 		"`/thongke lo so:88` — hồ sơ đầy đủ một số",
 		"`/thongke ngay ngay:03/09/2026` — phân tích một kỳ: kép, nháy, câm, chạm",
 		"`/thongke db thang:08/2026` — bảng giải đặc biệt cả tháng",
