@@ -346,6 +346,8 @@ func (r *Router) Handle(ctx context.Context, req Request) Reply {
 		return embed(r.loProfile(ctx, req.Args[1:]))
 	case "db":
 		return embed(r.specialMonth(ctx, req.Args[1:]))
+	case "ngay":
+		return embed(r.dayReport(ctx, req.Args[1:]))
 	default:
 		return embed(r.byDate(ctx, strings.Join(req.Args, " ")))
 	}
@@ -432,6 +434,31 @@ func (r *Router) specialMonth(ctx context.Context, args []string) *discordgo.Mes
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
 	}
 	return SpecialMonthEmbed(days, year, int(month))
+}
+
+// dayReport analyses one draw. No argument means the newest one, so the
+// common case is a bare command.
+func (r *Router) dayReport(ctx context.Context, args []string) *discordgo.MessageEmbed {
+	var (
+		draw domain.Draw
+		err  error
+	)
+	if len(args) == 0 {
+		draw, err = r.svc.Latest(ctx)
+	} else {
+		raw := strings.Join(args, " ")
+		day, parseErr := domain.ParseDate(raw, r.svc.Now())
+		if parseErr != nil {
+			return NoticeEmbed("Không đọc được ngày",
+				fmt.Sprintf("Mình không hiểu %q.\nDùng dạng `%s ngay 03/09/2026`.",
+					raw, r.prefix), false)
+		}
+		draw, err = r.svc.Get(ctx, day)
+	}
+	if err != nil {
+		return r.explain(err)
+	}
+	return DayReportEmbed(draw)
 }
 
 // archive returns the draw count and newest day for the footers. One call,
@@ -564,6 +591,7 @@ func (r *Router) statsHelp() string {
 		"`/thongke degan` — như trên nhưng chỉ tính giải đặc biệt",
 		"`/thongke tanso ngay:90` — tần suất, mặc định 30 ngày",
 		"`/thongke lo so:88` — hồ sơ đầy đủ một số",
+		"`/thongke ngay ngay:03/09/2026` — phân tích một kỳ: kép, nháy, câm, chạm",
 		"`/thongke db thang:08/2026` — bảng giải đặc biệt cả tháng",
 		"`/thongke kho` — kho dữ liệu đang có gì",
 		"_prefix: `" + p + " logan`, `" + p + " lo 88`, …_",

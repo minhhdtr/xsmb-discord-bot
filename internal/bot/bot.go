@@ -104,7 +104,8 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	if err := b.registerSlashCommands(r.User.ID, b.guildID); err != nil {
 		b.log.Error("cannot register slash commands", "scope", scope, "error", err)
 	} else {
-		b.log.Info("slash commands registered", "scope", scope, "count", len(SlashCommands()))
+		b.log.Info("slash commands registered", "scope", scope,
+			"count", len(SlashCommands(b.router.svc.Now())))
 	}
 
 	if err := s.UpdateGameStatus(0, "/xsmb · kết quả XSMB"); err != nil {

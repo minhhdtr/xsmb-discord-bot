@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/bot"
@@ -18,7 +19,7 @@ import (
 var commandName = regexp.MustCompile(`^[-_\p{L}\p{N}]{1,32}$`)
 
 func TestSlashCommandsAreValid(t *testing.T) {
-	cmds := bot.SlashCommands()
+	cmds := bot.SlashCommands(time.Now())
 	if len(cmds) == 0 {
 		t.Fatal("no commands defined")
 	}
@@ -76,7 +77,7 @@ func TestSlashRequiredOptionsComeFirst(t *testing.T) {
 			}
 		}
 	}
-	for _, c := range bot.SlashCommands() {
+	for _, c := range bot.SlashCommands(time.Now()) {
 		check(c.Name, c.Options)
 		for _, o := range c.Options {
 			if o.Type == discordgo.ApplicationCommandOptionSubCommand {
@@ -367,5 +368,107 @@ func TestSlashHelpSectionMapping(t *testing.T) {
 		if got := strings.Join(args, " "); got != c.want {
 			t.Fatalf("%q: args = %q, want %q", c.value, got, c.want)
 		}
+	}
+}
+
+// The example dates come from the clock, so they must survive the awkward
+// days: a month start, a 31st rolling back into a 30-day month, and either
+// side of the 18:35 cutoff.
+func TestSlashExampleDatesFollowTheClock(t *testing.T) {
+	dayOption := func(cmds []*discordgo.ApplicationCommand, name string) string {
+		t.Helper()
+		for _, c := range cmds {
+			if c.Name == name {
+				return c.Options[0].Description
+			}
+		}
+		t.Fatalf("no command %q", name)
+		return ""
+	}
+	monthOption := func(cmds []*discordgo.ApplicationCommand) string {
+		t.Helper()
+		for _, c := range cmds {
+			if c.Name != "thongke" {
+				continue
+			}
+			for _, sub := range c.Options {
+				if sub.Name == "db" {
+					return sub.Options[0].Description
+				}
+			}
+		}
+		t.Fatal("no /thongke db")
+		return ""
+	}
+
+	cases := []struct {
+		name      string
+		now       time.Time
+		wantDay   string
+		wantMonth string
+	}{
+		{
+			// Before 18:35 the newest result is yesterday's.
+			name:    "trước giờ quay",
+			now:     time.Date(2026, 9, 4, 8, 0, 0, 0, domain.Location()),
+			wantDay: "03/09/2026", wantMonth: "08/2026",
+		},
+		{
+			// After it, today's.
+			name:    "sau giờ quay",
+			now:     time.Date(2026, 9, 4, 19, 0, 0, 0, domain.Location()),
+			wantDay: "04/09/2026", wantMonth: "08/2026",
+		},
+		{
+			// The 1st: the previous month is the one before, not this one.
+			name:    "ngày mùng 1",
+			now:     time.Date(2026, 9, 1, 19, 0, 0, 0, domain.Location()),
+			wantDay: "01/09/2026", wantMonth: "08/2026",
+		},
+		{
+			// A 31st rolling back into a 30-day month. AddDate(0, -1, 0) here
+			// would give 01/07 instead of July.
+			name:    "ngày 31",
+			now:     time.Date(2026, 7, 31, 19, 0, 0, 0, domain.Location()),
+			wantDay: "31/07/2026", wantMonth: "06/2026",
+		},
+		{
+			// Across a year boundary.
+			name:    "tháng 1",
+			now:     time.Date(2027, 1, 5, 19, 0, 0, 0, domain.Location()),
+			wantDay: "05/01/2027", wantMonth: "12/2026",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmds := bot.SlashCommands(tc.now)
+			if got := dayOption(cmds, "xsmb"); !strings.Contains(got, tc.wantDay) {
+				t.Errorf("/xsmb ngay = %q, want it to mention %s", got, tc.wantDay)
+			}
+			if got := monthOption(cmds); !strings.Contains(got, tc.wantMonth) {
+				t.Errorf("/thongke db thang = %q, want it to mention %s", got, tc.wantMonth)
+			}
+		})
+	}
+}
+
+// Discord rejects an option description over 100 characters, and a dynamic
+// date makes the length easy to lose track of.
+func TestSlashDescriptionsFitDiscordsLimit(t *testing.T) {
+	var walk func(path string, opts []*discordgo.ApplicationCommandOption)
+	walk = func(path string, opts []*discordgo.ApplicationCommandOption) {
+		for _, o := range opts {
+			if n := len([]rune(o.Description)); n > 100 {
+				t.Errorf("%s %s: description is %d runes, max 100", path, o.Name, n)
+			}
+			walk(path+" "+o.Name, o.Options)
+		}
+	}
+	for _, c := range bot.SlashCommands(time.Now()) {
+		if n := len([]rune(c.Description)); n > 100 {
+			t.Errorf("%s: description is %d runes, max 100", c.Name, n)
+		}
+		walk(c.Name, c.Options)
 	}
 }

@@ -2,11 +2,13 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
 )
 
 // Slash commands are a second way into the same router. Match/Dispatch already
@@ -16,16 +18,32 @@ import (
 // manageChannels is the permission Discord itself enforces on /thongbao.
 var manageChannels int64 = discordgo.PermissionManageChannels
 
-// SlashCommands is the set registered with Discord.
-func SlashCommands() []*discordgo.ApplicationCommand {
+// exampleDates fill the "ví dụ ..." part of the option descriptions. Written
+// into the source they age badly - a hardcoded 2026 still reads 2026 in 2028 -
+// so they are derived from the clock instead. They are fixed when the commands
+// are registered, which happens once per start.
+func exampleDates(now time.Time) (day, month string) {
+	today := domain.DayOf(now)
+	// Subtracting the day-of-month lands on the last day of the previous
+	// month, without AddDate's month-length surprises.
+	previous := today.AddDate(0, 0, -today.Day())
+	return domain.FormatVN(domain.LatestPublished(now)),
+		domain.FormatMonth(previous.Year(), previous.Month())
+}
+
+// SlashCommands is the set registered with Discord. now supplies the example
+// dates in the descriptions.
+func SlashCommands(now time.Time) []*discordgo.ApplicationCommand {
+	exampleDay, exampleMonth := exampleDates(now)
 	return []*discordgo.ApplicationCommand{
 		{
 			Name:        "xsmb",
 			Description: "Kết quả xổ số miền Bắc",
 			Options: []*discordgo.ApplicationCommandOption{{
-				Type:        discordgo.ApplicationCommandOptionString,
-				Name:        "ngay",
-				Description: "Ngày cần xem, ví dụ 14/08/2026. Bỏ trống thì lấy kỳ mới nhất.",
+				Type: discordgo.ApplicationCommandOptionString,
+				Name: "ngay",
+				Description: fmt.Sprintf(
+					"Ngày cần xem, ví dụ %s. Bỏ trống thì lấy kỳ mới nhất.", exampleDay),
 			}},
 		},
 		{
@@ -89,12 +107,24 @@ func SlashCommands() []*discordgo.ApplicationCommand {
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "ngay",
+					Description: "Phân tích một kỳ: kép, nháy, đầu đuôi câm, chạm",
+					Options: []*discordgo.ApplicationCommandOption{{
+						Type: discordgo.ApplicationCommandOptionString,
+						Name: "ngay",
+						Description: fmt.Sprintf(
+							"Ngày cần xem, ví dụ %s. Bỏ trống thì lấy kỳ mới nhất.", exampleDay),
+					}},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
 					Name:        "db",
 					Description: "Bảng giải đặc biệt cả tháng",
 					Options: []*discordgo.ApplicationCommandOption{{
-						Type:        discordgo.ApplicationCommandOptionString,
-						Name:        "thang",
-						Description: "Tháng cần xem, ví dụ 08/2026. Bỏ trống thì lấy tháng này.",
+						Type: discordgo.ApplicationCommandOptionString,
+						Name: "thang",
+						Description: fmt.Sprintf(
+							"Tháng cần xem, ví dụ %s. Bỏ trống thì lấy tháng này.", exampleMonth),
 					}},
 				},
 				{
@@ -172,6 +202,11 @@ func SlashRequest(data discordgo.ApplicationCommandInteractionData) (kind Kind, 
 			}
 		case "lo":
 			args = []string{"lo", optString(sub.Options, "so")}
+		case "ngay":
+			args = []string{"ngay"}
+			if day := optString(sub.Options, "ngay"); day != "" {
+				args = append(args, strings.Fields(day)...)
+			}
 		case "db":
 			args = []string{"db"}
 			if month := optString(sub.Options, "thang"); month != "" {
@@ -325,6 +360,7 @@ func interactionCanManage(i *discordgo.InteractionCreate) bool {
 // while developing; without one they are global and can take up to an hour to
 // propagate.
 func (b *Bot) registerSlashCommands(appID, guildID string) error {
-	_, err := b.session.ApplicationCommandBulkOverwrite(appID, guildID, SlashCommands())
+	_, err := b.session.ApplicationCommandBulkOverwrite(appID, guildID,
+		SlashCommands(b.router.svc.Now()))
 	return err
 }

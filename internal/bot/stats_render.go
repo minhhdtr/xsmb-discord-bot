@@ -214,3 +214,87 @@ func recentStrip(days []domain.DayHit) (name, value string) {
 func specialCell(d domain.SpecialDay) string {
 	return fmt.Sprintf("%02d   %-6s %s", d.Day.Day(), d.Special, d.De)
 }
+
+// DayReportEmbed renders the descriptive read of one draw: what doubled up,
+// what came up empty, what the special prize touches. The counts table is one
+// code block so the columns line up on a phone.
+func DayReportEmbed(draw domain.Draw) *discordgo.MessageEmbed {
+	report := draw.Prizes.Report()
+	if report.De == "" {
+		return NoticeEmbed("Không có dữ liệu",
+			"Kỳ quay này chưa đủ 27 số để phân tích.", false)
+	}
+
+	var b strings.Builder
+	b.WriteString("      0  1  2  3  4  5  6  7  8  9\n")
+	b.WriteString(digitRow("Đầu", report.Heads))
+	b.WriteString(digitRow("Đuôi", report.Tails))
+
+	embed := &discordgo.MessageEmbed{
+		Title: fmt.Sprintf("📊 Phân tích XSMB · %s %s",
+			domain.WeekdayVN(draw.Date), domain.FormatVN(draw.Date)),
+		Color: colourStats,
+		Description: fmt.Sprintf("**Đề · %s** — chạm đầu **%d**, chạm đuôi **%d**, tổng **%d**\n```\n%s\n```",
+			report.De, report.ChamDau, report.ChamDuoi, report.TongDe,
+			strings.TrimRight(b.String(), "\n")),
+		Footer: &discordgo.MessageEmbedFooter{Text: statsFooter},
+	}
+
+	embed.Fields = []*discordgo.MessageEmbedField{
+		{Name: "Lô kép", Value: joinOrDash(report.Kep), Inline: true},
+		{Name: "Nháy", Value: nhayList(report.Nhay), Inline: true},
+		{Name: "Về nhiều nhất", Value: fmt.Sprintf("đầu %s · đuôi %s",
+			digitList(report.TopHeads), digitList(report.TopTails)), Inline: true},
+		{Name: "Câm", Value: fmt.Sprintf("đầu %s · đuôi %s",
+			digitList(report.MuteHeads), digitList(report.MuteTails)), Inline: false},
+	}
+	return embed
+}
+
+// digitRow is one line of the counts table, padded to the header above it.
+func digitRow(label string, counts [10]int) string {
+	var b strings.Builder
+	b.WriteString(padRunes(label, 5))
+	for _, n := range counts {
+		fmt.Fprintf(&b, "%2d ", n)
+	}
+	return strings.TrimRight(b.String(), " ") + "\n"
+}
+
+// digitList renders a set of digits, or a dash when the set is empty. "Không
+// có" would be truthful but too wide for an inline field.
+func digitList(digits []int) string {
+	if len(digits) == 0 {
+		return "—"
+	}
+	parts := make([]string, len(digits))
+	for i, d := range digits {
+		parts[i] = strconv.Itoa(d)
+	}
+	return strings.Join(parts, " ")
+}
+
+func joinOrDash(values []string) string {
+	if len(values) == 0 {
+		return "—"
+	}
+	return strings.Join(values, " ")
+}
+
+// nhayList names the multiplicity rather than printing a number, since "hai
+// nháy" is what a person says out loud.
+func nhayList(entries []domain.Nhay) string {
+	if len(entries) == 0 {
+		return "—"
+	}
+	names := map[int]string{2: "hai", 3: "ba", 4: "bốn", 5: "năm"}
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		word, ok := names[e.Hits]
+		if !ok {
+			word = strconv.Itoa(e.Hits)
+		}
+		parts[i] = fmt.Sprintf("%s (%s nháy)", e.Number, word)
+	}
+	return strings.Join(parts, "\n")
+}
