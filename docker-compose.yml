@@ -19,7 +19,7 @@ services:
     #   - "127.0.0.1:5432:5432"
 
   bot:
-    build: .
+    build: ./services/core
     env_file: .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:-xsmb}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
@@ -31,7 +31,7 @@ services:
   # Not started by `docker compose up`. Run it by hand for a large backfill:
   #   docker compose run --rm backfill --from 01/10/2005
   backfill:
-    build: .
+    build: ./services/core
     profiles: ["tools"]
     env_file: .env
     environment:

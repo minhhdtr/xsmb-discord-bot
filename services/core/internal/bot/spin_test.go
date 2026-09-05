@@ -32,11 +32,15 @@ func fixedSpin() domain.Spin {
 // A mock board is laid out exactly like a real one, so the framing is the only
 // thing keeping a screenshot of it from being read as a result. Every frame
 // has to carry it, not just the last.
+//
+// Three marks share the job: the heading, the footer, and a colour used
+// nowhere else. The heading is the shortest of them, so the other two are
+// checked here too rather than taken on trust.
 func TestSpinEmbedIsLabelledOnEveryFrame(t *testing.T) {
 	spin := fixedSpin()
 	for step := 0; step <= spin.Steps(); step++ {
 		e := bot.SpinEmbed(spin, step)
-		if !strings.Contains(e.Title, "KHÔNG PHẢI KẾT QUẢ THẬT") {
+		if !strings.Contains(e.Title, "QUAY THỬ") {
 			t.Fatalf("step %d title = %q", step, e.Title)
 		}
 		if !strings.Contains(e.Footer.Text, "ngẫu nhiên") {

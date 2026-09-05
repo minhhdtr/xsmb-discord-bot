@@ -1,4 +1,5 @@
 COMPOSE ?= docker compose
+CORE    ?= services/core
 DATE    ?=
 FROM    ?=
 RATE    ?=
@@ -21,20 +22,20 @@ logs:    ## Follow the bot's logs
 restart: ## Rebuild and restart just the bot
 	$(COMPOSE) up -d --build bot
 
-build:   ## Build the binary locally
-	go build -mod=vendor -o bin/xsmb-discord-bot ./cmd/xsmb-discord-bot
+build:   ## Build the core binary locally
+	cd $(CORE) && go build -mod=vendor -o ../../bin/core ./cmd/xsmb-discord-bot
 
-test:    ## Run the test suite
-	go test -mod=vendor ./...
+test:    ## Run the core test suite
+	cd $(CORE) && go test -mod=vendor ./...
 
-race:    ## Run the test suite under the race detector
-	go test -mod=vendor -race ./...
+race:    ## Run the core test suite under the race detector
+	cd $(CORE) && go test -mod=vendor -race ./...
 
 fetch:   ## Crawl one day and print it. Needs no token, no database. make fetch DATE=14/08/2026
-	go run -mod=vendor ./cmd/xsmb-discord-bot fetch $(DATE)
+	cd $(CORE) && go run -mod=vendor ./cmd/xsmb-discord-bot fetch $(DATE)
 
 gold:    ## Print the current gold board. Needs no token, no database
-	go run -mod=vendor ./cmd/xsmb-discord-bot gold
+	cd $(CORE) && go run -mod=vendor ./cmd/xsmb-discord-bot gold
 
 backfill: ## Fill the archive, then exit. make backfill [FROM=01/10/2005] [JOBS=16] [RATE=200ms]
 	$(COMPOSE) run --rm backfill $(if $(FROM),--from $(FROM)) $(if $(JOBS),--concurrency $(JOBS)) $(if $(RATE),--rate $(RATE))
@@ -48,7 +49,7 @@ stats:   ## Count what the archive holds
 		-c "SELECT channel_id, guild_id FROM subscriptions;"
 
 tidy:    ## Drop vendor/ and resolve modules from the proxy instead
-	rm -rf vendor && go mod tidy
+	cd $(CORE) && rm -rf vendor && go mod tidy
 
 fmt:     ## Format and vet
-	gofmt -w . && go vet ./...
+	cd $(CORE) && gofmt -w . && go vet ./...

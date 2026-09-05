@@ -1,3 +1,13 @@
 /bin/
-/xsmb-discord-bot
 .env
+
+# Go
+/services/core/bin/
+
+# TypeScript
+node_modules/
+/services/bot/dist/
+
+# Python
+__pycache__/
+.venv/
