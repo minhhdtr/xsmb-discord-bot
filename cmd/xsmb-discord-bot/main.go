@@ -77,6 +77,10 @@ func run() error {
 		return err
 	}
 
+	// Ingest runs whether or not any channel is subscribed. Announcing is the
+	// bot's job and a separate one; the archive must not depend on it.
+	go service.NewIngest(svc, log).Run(ctx)
+
 	if cfg.BackfillOnStart {
 		go backgroundBackfill(ctx, cfg, svc, log)
 	}

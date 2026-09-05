@@ -35,6 +35,12 @@ type Service struct {
 	mu       sync.Mutex
 	inFlight map[string]*flight
 
+	// missed holds days the source said were not ready yet, with the time the
+	// note expires. Guarded separately from mu so a crawl in progress does not
+	// hold up a lookup.
+	missMu sync.Mutex
+	missed map[string]time.Time
+
 	// archiveGen counts every write to the archive. Backfill fills gaps
 	// behind the newest day, so max(draw_date) alone cannot tell the
 	// statistics cache that the archive moved under it.
@@ -62,19 +68,80 @@ func New(store storage.Store, src provider.Provider, clock func() time.Time, log
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{store: store, src: src, now: clock, log: log, inFlight: make(map[string]*flight)}
+	return &Service{store: store, src: src, now: clock, log: log,
+		inFlight: make(map[string]*flight), missed: make(map[string]time.Time)}
 }
 
 // Now exposes the service clock so callers share one notion of time.
 func (s *Service) Now() time.Time { return s.now().In(domain.Location()) }
 
-// Latest returns the newest day whose result should be out.
+// absenceGrace is how long past 18:35 to wait before believing an empty page
+// means the day had no draw at all.
+//
+// Marking an absence is a one-way door. Get checks IsAbsent before it will
+// crawl, AwaitComplete treats ErrNoResult as settled and stops polling, and
+// Backfill goes through Get as well. Only SaveDraw clears an absence, and
+// once a day is marked nothing reaches SaveDraw for it again - the day stays
+// empty until someone deletes the row by hand. The source publishes tier by
+// tier, so a blank or unparseable page just after the mark is far more likely
+// to be mid-publication than a cancelled draw. The bar for writing an absence
+// is therefore high, and the cost of waiting is only that a genuinely empty
+// day is confirmed later.
+const absenceGrace = 45 * time.Minute
+
+// negativeTTL is a floor on how often the same day is crawled again after the
+// source said it was not ready.
+//
+// Single-flight collapses requests that overlap; it does nothing for requests
+// spaced apart, so a run of commands while the results are still landing
+// becomes a run of crawls. This is deliberately below the 20 second poll used
+// by Ingest and AwaitComplete, so neither is ever throttled by it and neither
+// needs a way around it.
+const negativeTTL = 10 * time.Second
+
+// drawSettles is how long before the completion mark the balls are done and
+// the source can plausibly have the numbers.
+const drawSettles = 10 * time.Minute
+
+// Latest returns the newest result available. Before 18:35 LatestPublished
+// says yesterday, but the draw itself finishes a little earlier, so once it
+// has settled this reaches for today first and falls back quietly.
 func (s *Service) Latest(ctx context.Context) (domain.Draw, error) {
-	return s.Get(ctx, domain.LatestPublished(s.Now()))
+	now := s.Now()
+	today := domain.DayOf(now)
+	published := domain.LatestPublished(now)
+
+	if published.Before(today) && !now.Before(domain.CompletionTime(today).Add(-drawSettles)) {
+		draw, err := s.Get(ctx, today)
+		switch {
+		case err == nil:
+			return draw, nil
+		case errors.Is(err, ErrNotYet), errors.Is(err, ErrNoResult):
+			// Ordinary this early. Yesterday's result is the honest answer.
+		default:
+			return domain.Draw{}, err
+		}
+	}
+	return s.Get(ctx, published)
 }
 
-// Get returns one day's result, crawling if it is not stored yet.
+// Get returns one day's result, crawling if it is not stored yet. This is the
+// path for anything a person triggered, so it heeds the notes left by earlier
+// misses.
 func (s *Service) Get(ctx context.Context, day time.Time) (domain.Draw, error) {
+	return s.lookup(ctx, day, true)
+}
+
+// poll is Get for the loops that already pace themselves - Ingest and
+// AwaitComplete. They ignore the notes, because throttling a loop that polls
+// every twenty seconds by a note some command left a second ago ties two
+// unrelated rates together. They still leave notes: whether to consult one is
+// the caller's business, whether to record one is not.
+func (s *Service) poll(ctx context.Context, day time.Time) (domain.Draw, error) {
+	return s.lookup(ctx, day, false)
+}
+
+func (s *Service) lookup(ctx context.Context, day time.Time, heedNotes bool) (domain.Draw, error) {
 	day = domain.DayOf(day)
 	if err := domain.InRange(day, s.Now()); err != nil {
 		return domain.Draw{}, err
@@ -89,7 +156,46 @@ func (s *Service) Get(ctx context.Context, day time.Time) (domain.Draw, error) {
 	} else if absent {
 		return domain.Draw{}, fmt.Errorf("%s: %w", domain.FormatVN(day), ErrNoResult)
 	}
-	return s.fetchOnce(ctx, day)
+	// After the store lookup, never before it: a day Ingest has just written
+	// must be served, not refused because of a note left while it was missing.
+	if heedNotes && s.missedRecently(day) {
+		return domain.Draw{}, fmt.Errorf("%s: %w", domain.FormatVN(day), ErrNotYet)
+	}
+
+	draw, err := s.fetchOnce(ctx, day)
+	if errors.Is(err, ErrNotYet) {
+		s.noteMiss(day)
+	}
+	return draw, err
+}
+
+// missedRecently reports whether the source was asked for this day within the
+// last negativeTTL and said it was not ready.
+func (s *Service) missedRecently(day time.Time) bool {
+	s.missMu.Lock()
+	defer s.missMu.Unlock()
+	until, ok := s.missed[domain.FormatISO(day)]
+	return ok && s.Now().Before(until)
+}
+
+// noteMiss records that the source had nothing for this day yet. Expired
+// entries are swept here rather than on a timer: the map only holds days
+// somebody asked about, and every write is a chance to drop the stale ones.
+func (s *Service) noteMiss(day time.Time) {
+	s.missMu.Lock()
+	defer s.missMu.Unlock()
+
+	now := s.Now()
+	key := domain.FormatISO(day)
+	if s.missed == nil {
+		s.missed = make(map[string]time.Time)
+	}
+	for other, until := range s.missed {
+		if other != key && !now.Before(until) {
+			delete(s.missed, other)
+		}
+	}
+	s.missed[key] = now.Add(negativeTTL)
 }
 
 // fetchOnce collapses concurrent misses for the same day into a single crawl.
@@ -129,8 +235,10 @@ func (s *Service) crawl(ctx context.Context, day time.Time) (domain.Draw, error)
 	}
 
 	outcome := s.src.Fetch(ctx, day)
-	// Before 18:35 a missing result is just early news, not an absence.
-	due := !s.Now().Before(domain.CompletionTime(day))
+	// Before the mark plus absenceGrace, a missing result is early news rather
+	// than an absence. See absenceGrace for why this errs so far toward
+	// waiting.
+	due := !s.Now().Before(domain.CompletionTime(day).Add(absenceGrace))
 
 	switch outcome.Status {
 	case domain.StatusFound:
@@ -180,7 +288,7 @@ func (s *Service) AwaitComplete(ctx context.Context, day time.Time, interval tim
 	attempt := 0
 	for {
 		attempt++
-		draw, err := s.Get(ctx, day)
+		draw, err := s.poll(ctx, day)
 		switch {
 		case err == nil:
 			return draw, nil
