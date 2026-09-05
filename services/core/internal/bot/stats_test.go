@@ -57,7 +57,7 @@ func statsRouter(t *testing.T, perDay [][]string) *bot.Router {
 	}
 	svc := service.New(store, &stubProvider{answer: found(t)},
 		func() time.Time { return time.Date(2026, 9, 1, 20, 0, 0, 0, domain.Location()) }, quiet())
-	return bot.NewRouter(svc, nil, store, "!xsmb", "!gold", quiet())
+	return bot.NewRouter(coreOver(t, svc, store, nil), svc.Now, "!xsmb", "!gold", quiet())
 }
 
 func text(t *testing.T, e *bot.Router, args ...string) string {

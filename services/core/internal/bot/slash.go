@@ -395,6 +395,6 @@ func interactionCanManage(i *discordgo.InteractionCreate) bool {
 // propagate.
 func (b *Bot) registerSlashCommands(appID, guildID string) error {
 	_, err := b.session.ApplicationCommandBulkOverwrite(appID, guildID,
-		SlashCommands(b.router.svc.Now()))
+		SlashCommands(b.router.now()))
 	return err
 }

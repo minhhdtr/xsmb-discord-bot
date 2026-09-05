@@ -81,7 +81,7 @@ func TestEndToEndAnnouncement(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := &recorder{}
-	announcer := bot.NewAnnouncer(svc, store, rec.post, quiet())
+	announcer := bot.NewAnnouncer(coreOver(t, svc, store, nil), svc.Now, rec.post, quiet())
 	announcer.SetPollInterval(time.Millisecond)
 
 	announcer.RunFor(ctx, day)
@@ -110,7 +110,7 @@ func TestEndToEndAnnouncement(t *testing.T) {
 
 	// And a command asking for the same day now answers from the database.
 	before := atomic.LoadInt32(&hits)
-	router := bot.NewRouter(svc, nil, store, "!xsmb", "!gold", quiet())
+	router := bot.NewRouter(coreOver(t, svc, store, nil), svc.Now, "!xsmb", "!gold", quiet())
 	embed := router.Handle(ctx, bot.Request{Args: []string{"21/08/2026"}}).Embed
 	if !strings.Contains(embed.Title, "21/08/2026") {
 		t.Fatalf("title = %q", embed.Title)

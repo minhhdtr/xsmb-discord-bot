@@ -131,7 +131,7 @@ func newGoldRouter(t *testing.T, board func(context.Context) (domain.GoldBoard, 
 	store := memStore()
 	svc := service.New(store, &stubProvider{answer: found(t)}, func() time.Time { return at(20, 0) }, quiet())
 	gold := service.NewGold(goldFunc(board), time.Minute, time.Hour, func() time.Time { return at(20, 0) }, quiet())
-	return bot.NewRouter(svc, gold, store, "!xsmb", "!gold", quiet())
+	return bot.NewRouter(coreOver(t, svc, store, gold), svc.Now, "!xsmb", "!gold", quiet())
 }
 
 type goldFunc func(context.Context) (domain.GoldBoard, error)
@@ -192,7 +192,7 @@ func TestHandleGoldRendersAndReportsErrors(t *testing.T) {
 func TestHandleGoldWithoutConfiguration(t *testing.T) {
 	store := memStore()
 	svc := service.New(store, &stubProvider{answer: found(t)}, func() time.Time { return at(20, 0) }, quiet())
-	r := bot.NewRouter(svc, nil, store, "!xsmb", "!gold", quiet())
+	r := bot.NewRouter(coreOver(t, svc, store, nil), svc.Now, "!xsmb", "!gold", quiet())
 	if embed := r.HandleGold(context.Background(), bot.Request{}).Embed; !strings.Contains(embed.Title, "Chưa bật") {
 		t.Fatalf("title = %q", embed.Title)
 	}
@@ -275,7 +275,7 @@ func TestGoldChartDefaultsToTheSJCBar(t *testing.T) {
 func TestGoldChartWithoutConfiguration(t *testing.T) {
 	store := memStore()
 	svc := service.New(store, &stubProvider{answer: found(t)}, func() time.Time { return at(20, 0) }, quiet())
-	r := bot.NewRouter(svc, nil, store, "!xsmb", "!gold", quiet())
+	r := bot.NewRouter(coreOver(t, svc, store, nil), svc.Now, "!xsmb", "!gold", quiet())
 	reply := r.GoldChart(context.Background(), nil)
 	if reply.File != nil || !strings.Contains(reply.Embed.Title, "Chưa bật") {
 		t.Fatalf("embed = %q, file = %v", reply.Embed.Title, reply.File)
@@ -342,7 +342,7 @@ func TestGoldHelpFallsBackWhenTheSourceIsDown(t *testing.T) {
 func TestGoldHelpWorksWithoutConfiguration(t *testing.T) {
 	store := memStore()
 	svc := service.New(store, &stubProvider{answer: found(t)}, func() time.Time { return at(20, 0) }, quiet())
-	r := bot.NewRouter(svc, nil, store, "!xsmb", "!gold", quiet())
+	r := bot.NewRouter(coreOver(t, svc, store, nil), svc.Now, "!xsmb", "!gold", quiet())
 	codes := helpCodes(t, r.HandleGold(context.Background(), bot.Request{Args: []string{"help"}}).Embed)
 	if !strings.Contains(codes, "SJL1L10") {
 		t.Fatalf("codes = %s", codes)

@@ -8,21 +8,13 @@ import (
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
 )
 
-// Subscription is a channel that receives the 18:35 announcement.
-type Subscription struct {
-	ChannelID string
-	GuildID   string
-	CreatedAt time.Time
-}
-
-// Stats summarises what the archive holds.
-type Stats struct {
-	Draws    int
-	Absences int
-	Channels int
-	Earliest time.Time
-	Latest   time.Time
-}
+// Both shapes live in domain now, so a client with no database can name them.
+// Aliased rather than moved outright: every call site here still reads
+// storage.Stats, which is what it means in this package.
+type (
+	Subscription = domain.Subscription
+	Stats        = domain.Archive
+)
 
 // Store is everything the bot needs from persistence.
 type Store interface {

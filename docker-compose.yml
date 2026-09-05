@@ -21,6 +21,9 @@ services:
   bot:
     build: ./services/core
     env_file: .env
+    # No ports: mapping, and it must stay that way. The core API has no auth,
+    # and five of its endpoints write: publishing this port would let anyone
+    # who can reach the host silence the daily announcement.
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:-xsmb}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
     depends_on:

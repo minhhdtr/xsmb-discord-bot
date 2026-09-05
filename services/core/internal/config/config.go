@@ -49,6 +49,15 @@ type Config struct {
 	// PrefixCommands keeps the !xsmb form working. Turning it off also drops
 	// the Message Content intent, which is privileged.
 	PrefixCommands bool
+
+	// CoreURL is where the bot reaches the core API. Same process today, its
+	// own container tomorrow; the bot does not know the difference.
+	CoreURL string
+
+	// APIAddr is where the core HTTP API listens. It carries no secrets and
+	// has no auth, so the default binds inside the container only; publishing
+	// it is a deliberate act, not a default.
+	APIAddr string
 }
 
 // Load reads and validates the environment, failing at startup rather than
@@ -63,9 +72,17 @@ func Load() (Config, error) {
 		GoldPrefix:    strings.TrimSpace(os.Getenv("GOLD_PREFIX")),
 		GoldURL:       strings.TrimSpace(os.Getenv("GOLD_URL")),
 		GuildID:       strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID")),
+		APIAddr:       strings.TrimSpace(os.Getenv("API_ADDR")),
+		CoreURL:       strings.TrimSpace(os.Getenv("CORE_URL")),
 	}
 	if c.GoldPrefix == "" {
 		c.GoldPrefix = "!gold"
+	}
+	if c.APIAddr == "" {
+		c.APIAddr = ":8080"
+	}
+	if c.CoreURL == "" {
+		c.CoreURL = "http://127.0.0.1" + c.APIAddr
 	}
 
 	var problems []string

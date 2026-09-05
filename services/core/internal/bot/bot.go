@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/service"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/storage"
 )
 
 // commandTimeout bounds one command, including a cold crawl of the source.
@@ -39,7 +37,7 @@ type Options struct {
 
 // New builds a Bot. The application needs the Message Content intent, or
 // message bodies arrive empty and no command is ever seen.
-func New(token string, opts Options, svc *service.Service, gold *service.Gold, store storage.Store, log *slog.Logger) (*Bot, error) {
+func New(token string, opts Options, core Core, clock func() time.Time, log *slog.Logger) (*Bot, error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -59,12 +57,12 @@ func New(token string, opts Options, svc *service.Service, gold *service.Gold, s
 
 	b := &Bot{
 		session: session,
-		router:  NewRouter(svc, gold, store, opts.Prefix, opts.GoldPrefix, log),
+		router:  NewRouter(core, clock, opts.Prefix, opts.GoldPrefix, log),
 		log:     log,
 		guildID: opts.GuildID,
 		prefix:  opts.PrefixCommands,
 	}
-	b.announcer = NewAnnouncer(svc, store, b.postEmbed, log)
+	b.announcer = NewAnnouncer(core, clock, b.postEmbed, log)
 
 	session.AddHandler(b.onReady)
 	session.AddHandler(b.onInteraction)
@@ -105,7 +103,7 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 		b.log.Error("cannot register slash commands", "scope", scope, "error", err)
 	} else {
 		b.log.Info("slash commands registered", "scope", scope,
-			"count", len(SlashCommands(b.router.svc.Now())))
+			"count", len(SlashCommands(b.router.now())))
 	}
 
 	if err := s.UpdateGameStatus(0, "/xsmb · kết quả XSMB"); err != nil {

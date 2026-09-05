@@ -2,13 +2,13 @@ package bot
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/format"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/present"
 )
 
 const colourStats = 0x6b46c1
@@ -169,21 +169,10 @@ func SpecialMonthEmbed(days []domain.SpecialDay, year int, month int) *discordgo
 			fmt.Sprintf("Kho chưa có kỳ quay nào trong tháng %s.", label), false)
 	}
 
-	half := (len(days) + 1) / 2
-	var b strings.Builder
-	b.WriteString("Ngày ĐB    Đề   Ngày ĐB    Đề\n")
-	for i := 0; i < half; i++ {
-		b.WriteString(specialCell(days[i]))
-		if j := i + half; j < len(days) {
-			b.WriteString("  " + specialCell(days[j]))
-		}
-		b.WriteByte('\n')
-	}
-
 	return &discordgo.MessageEmbed{
 		Title:       "🎱 Giải đặc biệt tháng " + label,
 		Color:       colourStats,
-		Description: "```\n" + strings.TrimRight(b.String(), "\n") + "\n```",
+		Description: "```\n" + present.SpecialMonth(days) + "\n```",
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: fmt.Sprintf("%d kỳ · %s", len(days), statsFooter),
 		},
@@ -212,10 +201,6 @@ func recentStrip(days []domain.DayHit) (name, value string) {
 	return name, "```\n" + b.String() + "\n```· = không về · số = số nháy"
 }
 
-func specialCell(d domain.SpecialDay) string {
-	return fmt.Sprintf("%02d   %-6s %s", d.Day.Day(), d.Special, d.De)
-}
-
 // DayReportEmbed renders the descriptive read of one draw: what doubled up,
 // what came up empty, what the special prize touches. The counts table is one
 // code block so the columns line up on a phone.
@@ -226,18 +211,13 @@ func DayReportEmbed(draw domain.Draw) *discordgo.MessageEmbed {
 			"Kỳ quay này chưa đủ 27 số để phân tích.", false)
 	}
 
-	var b strings.Builder
-	b.WriteString("      0  1  2  3  4  5  6  7  8  9\n")
-	b.WriteString(digitRow("Đầu", report.Heads))
-	b.WriteString(digitRow("Đuôi", report.Tails))
-
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf("📊 Phân tích XSMB · %s %s",
 			domain.WeekdayVN(draw.Date), domain.FormatVN(draw.Date)),
 		Color: colourStats,
 		Description: fmt.Sprintf("**Đề · %s** — chạm đầu **%d**, chạm đuôi **%d**, tổng **%d**\n```\n%s\n```",
 			report.De, report.ChamDau, report.ChamDuoi, report.TongDe,
-			strings.TrimRight(b.String(), "\n")),
+			present.DigitCounts(report.Heads, report.Tails)),
 		Footer: &discordgo.MessageEmbedFooter{Text: statsFooter},
 	}
 
@@ -250,16 +230,6 @@ func DayReportEmbed(draw domain.Draw) *discordgo.MessageEmbed {
 			digitList(report.MuteHeads), digitList(report.MuteTails)), Inline: false},
 	}
 	return embed
-}
-
-// digitRow is one line of the counts table, padded to the header above it.
-func digitRow(label string, counts [10]int) string {
-	var b strings.Builder
-	b.WriteString(padRunes(label, 5))
-	for _, n := range counts {
-		fmt.Fprintf(&b, "%2d ", n)
-	}
-	return strings.TrimRight(b.String(), " ") + "\n"
 }
 
 // digitList renders a set of digits, or a dash when the set is empty. "Không
@@ -300,10 +270,6 @@ func nhayList(entries []domain.Nhay) string {
 	return strings.Join(parts, "\n")
 }
 
-// barWidth is the widest bar in a grouped frequency, chosen so the whole row
-// fits a phone without wrapping.
-const barWidth = 12
-
 // GroupedFrequencyEmbed renders frequency folded into ten buckets. The bar is
 // scaled to the busiest bucket and the percentage is against an even split, so
 // a figure can be read as ordinary or not without doing the arithmetic.
@@ -316,50 +282,14 @@ func GroupedFrequencyEmbed(grouped domain.GroupedFrequency, days, archive int) *
 		window = "toàn kho"
 	}
 
-	peak := grouped.Peak()
-	var b strings.Builder
-	for _, bucket := range grouped.Buckets {
-		bar := 0
-		if peak > 0 {
-			bar = bucket.Hits * barWidth / peak
-		}
-		fmt.Fprintf(&b, "%d │ %5d  %-*s %5s\n",
-			bucket.Digit, bucket.Hits, barWidth, strings.Repeat("▇", bar),
-			shareLabel(share(bucket.Hits, grouped.Even)))
-	}
-
-	note := fmt.Sprintf("Chia đều là %s lần mỗi ô.", format.Decimal(grouped.Even, 0))
-	if grouped.By.Overlaps() {
-		note += " Một lô chạm hai chữ số nên được đếm ở cả hai ô, trừ lô kép."
-	}
-
 	return &discordgo.MessageEmbed{
 		Title: fmt.Sprintf("📊 Tần suất %s · %s", grouped.By.Label(), window),
 		Color: colourStats,
 		Description: fmt.Sprintf("```\n%s\n```\n%s",
-			strings.TrimRight(b.String(), "\n"), note),
+			present.Buckets(grouped), present.BucketNote(grouped)),
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: fmt.Sprintf("Đếm nháy · kho %s kỳ · %s",
 				format.Decimal(float64(archive), 0), statsFooter),
 		},
 	}
-}
-
-// share is how far a bucket sits from an even split, in percent.
-func share(hits int, even float64) float64 {
-	if even == 0 {
-		return 0
-	}
-	return (float64(hits) - even) / even * 100
-}
-
-// shareLabel shows which side of even a bucket sits on. A bucket half a
-// percent below even is not "-0%", it is level. Named apart from
-// signedPercent, which formats a gold price move to two decimals.
-func shareLabel(value float64) string {
-	rounded := math.Round(value)
-	if rounded == 0 {
-		return "0%"
-	}
-	return fmt.Sprintf("%+.0f%%", rounded)
 }

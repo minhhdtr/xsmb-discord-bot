@@ -160,3 +160,17 @@ func mustLoad(name string) *time.Location {
 	}
 	return loc
 }
+
+var (
+	// ErrNoResult means the day genuinely has no draw.
+	ErrNoResult = errors.New("no result for this day")
+
+	// ErrNotYet means the draw has not finished publishing. Temporary, and
+	// never cached.
+	//
+	// Both sentinels live here rather than in service because they describe
+	// the subject, not the machinery: a client reading them off an HTTP status
+	// has no service to import, and should not have to pull a database driver
+	// into its binary to name "not published yet".
+	ErrNotYet = errors.New("result not published yet")
+)

@@ -16,13 +16,11 @@ import (
 	"github.com/minhhdtr/xsmb-discord-bot/internal/storage"
 )
 
+// Defined in domain, and re-exported here so every existing caller and every
+// errors.Is check keeps working unchanged.
 var (
-	// ErrNoResult means the day genuinely has no draw.
-	ErrNoResult = errors.New("no result for this day")
-
-	// ErrNotYet means the draw hasn't finished publishing. Temporary, and never
-	// cached.
-	ErrNotYet = errors.New("result not published yet")
+	ErrNoResult = domain.ErrNoResult
+	ErrNotYet   = domain.ErrNotYet
 )
 
 // Service reads draws, crawling on demand and caching what it learns.

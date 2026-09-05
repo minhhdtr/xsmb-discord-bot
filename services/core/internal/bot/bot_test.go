@@ -66,57 +66,6 @@ func at(hour, minute int) time.Time {
 	return time.Date(2026, 8, 21, hour, minute, 0, 0, domain.Location())
 }
 
-// --- rendering ---
-
-func TestTableAlignsVietnameseHeadings(t *testing.T) {
-	lines := strings.Split(bot.Table(samplePrizes(t)), "\n")
-	if len(lines) != 10 { // 8 tiers, with prize3 and prize5 each wrapping onto a second row
-		t.Fatalf("got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
-	}
-	// Every row must start its numbers at the same rune offset or the columns
-	// skew on a phone. Byte offsets differ because of the diacritics.
-	want := -1
-	for _, line := range lines {
-		offset := strings.IndexFunc(line, func(r rune) bool { return r >= '0' && r <= '9' })
-		runeOffset := len([]rune(line[:offset]))
-		if want == -1 {
-			want = runeOffset
-		}
-		if runeOffset != want {
-			t.Fatalf("row %q starts numbers at rune %d, want %d", line, runeOffset, want)
-		}
-	}
-	if !strings.HasPrefix(lines[0], "Đặc biệt") {
-		t.Fatalf("first row = %q", lines[0])
-	}
-}
-
-func TestTableIsEmptyForInvalidPrizes(t *testing.T) {
-	var zero domain.Prizes
-	if bot.Table(zero) != "" || bot.HeadTail(zero) != "" {
-		t.Fatal("rendered a zero-value Prizes")
-	}
-}
-
-func TestHeadTailCoversEveryHead(t *testing.T) {
-	lines := strings.Split(bot.HeadTail(samplePrizes(t)), "\n")
-	if len(lines) != 10 {
-		t.Fatalf("got %d rows, want 10", len(lines))
-	}
-	total := 0
-	for _, line := range lines {
-		_, tails, _ := strings.Cut(line, "│")
-		tails = strings.TrimSpace(tails)
-		if tails == "-" {
-			continue
-		}
-		total += len(strings.Fields(tails))
-	}
-	if total != domain.TotalNumbers {
-		t.Fatalf("rows hold %d tails, want 27", total)
-	}
-}
-
 func TestDrawEmbedFitsDiscordLimits(t *testing.T) {
 	embed := bot.DrawEmbed(sampleDraw(t, domain.NewDate(2026, 8, 20)), true)
 	if len(embed.Description) > 4096 {
@@ -175,7 +124,7 @@ func newRouter(t *testing.T, clock func() time.Time, answer func(time.Time) doma
 	store := storage.NewMemory()
 	src := &stubProvider{answer: answer}
 	svc := service.New(store, src, clock, quiet())
-	return bot.NewRouter(svc, nil, store, "!xsmb", "!gold", quiet()), store, src
+	return bot.NewRouter(coreOver(t, svc, store, nil), svc.Now, "!xsmb", "!gold", quiet()), store, src
 }
 
 func found(t *testing.T) func(time.Time) domain.Outcome {
@@ -336,7 +285,7 @@ func newAnnouncer(t *testing.T, clock func() time.Time, answer func(time.Time) d
 	src := &stubProvider{answer: answer}
 	svc := service.New(store, src, clock, quiet())
 	rec := &recorder{}
-	return bot.NewAnnouncer(svc, store, rec.post, quiet()), store, rec, src
+	return bot.NewAnnouncer(coreOver(t, svc, store, nil), svc.Now, rec.post, quiet()), store, rec, src
 }
 
 func TestAnnouncerPostsToEverySubscriber(t *testing.T) {

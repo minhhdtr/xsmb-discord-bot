@@ -87,3 +87,12 @@ func (s Spin) Just(n int) (int, bool) {
 // goes through, so a generator bug cannot produce something a real board could
 // never be.
 func (s Spin) Prizes() (Prizes, error) { return NewPrizes(s.numbers) }
+
+// SpinFrom rebuilds a spin from the wire. A client receives the numbers and
+// the reveal order and needs the same Board and Just behaviour as the side
+// that generated them; without this it would have to reimplement the slicing,
+// which is exactly the sort of duplicated rule that drifts.
+func SpinFrom(numbers []string, order []int) Spin {
+	return Spin{numbers: append([]string(nil), numbers...),
+		order: append([]int(nil), order...)}
+}

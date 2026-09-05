@@ -16,8 +16,6 @@ import (
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/format"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/provider"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/service"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/storage"
 )
 
 // Request is one command without Discord's plumbing, so the router is
@@ -31,9 +29,8 @@ type Request struct {
 
 // Router turns a Request into the embed to reply with.
 type Router struct {
-	svc        *service.Service
-	gold       *service.Gold
-	store      storage.Store
+	core       Core
+	now        func() time.Time
 	prefix     string
 	goldPrefix string
 	log        *slog.Logger
@@ -45,11 +42,14 @@ type Router struct {
 }
 
 // NewRouter builds a command router. gold may be nil.
-func NewRouter(svc *service.Service, gold *service.Gold, store storage.Store, prefix, goldPrefix string, log *slog.Logger) *Router {
+func NewRouter(core Core, clock func() time.Time, prefix, goldPrefix string, log *slog.Logger) *Router {
+	if clock == nil {
+		clock = func() time.Time { return time.Now().In(domain.Location()) }
+	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Router{svc: svc, gold: gold, store: store,
+	return &Router{core: core, now: clock,
 		prefix: prefix, goldPrefix: goldPrefix, log: log,
 		spins: make(map[string]time.Time)}
 }
@@ -119,12 +119,12 @@ func (r *Router) GoldChart(ctx context.Context, args []string) Reply {
 			return embed(r.goldHelp(ctx))
 		}
 	}
-	if r.gold == nil {
-		return embed(NoticeEmbed("Chưa bật", "Tính năng giá vàng chưa được cấu hình.", true))
-	}
 	code, days := parseChartArgs(args)
 
-	series, err := r.gold.History(ctx, code, days)
+	series, err := r.core.GoldHistory(ctx, code, days)
+	if errors.Is(err, ErrNotConfigured) {
+		return embed(NoticeEmbed("Chưa bật", "Tính năng giá vàng chưa được cấu hình.", true))
+	}
 	if err != nil {
 		r.log.Error("gold history failed", "code", code, "days", days, "error", err)
 		return embed(NoticeEmbed("Lỗi",
@@ -242,14 +242,16 @@ func (r *Router) GoldChoices(ctx context.Context, typed string) []*discordgo.App
 	type entry struct{ code, label string }
 	var entries []entry
 
-	if r.gold != nil {
-		if board, err := r.gold.Board(ctx); err == nil {
-			for _, q := range board.Quotes() {
-				entries = append(entries, entry{q.Code, q.Name})
-			}
-		} else {
-			r.log.Warn("autocomplete fell back to the built-in code list", "error", err)
+	// Whether gold is configured at all is core's business now, and it says so
+	// with an error like any other. Falling back to the built-in list covers
+	// both "not configured" and "source unreachable", which want the same
+	// answer here anyway.
+	if board, err := r.core.GoldBoard(ctx); err == nil {
+		for _, q := range board.Quotes() {
+			entries = append(entries, entry{q.Code, q.Name})
 		}
+	} else {
+		r.log.Warn("autocomplete fell back to the built-in code list", "error", err)
 	}
 	if len(entries) == 0 {
 		for _, code := range provider.GoldCodes() {
@@ -283,10 +285,7 @@ func (r *Router) GoldChoices(ctx context.Context, typed string) []*discordgo.App
 // liveGoldCodes reads the codes the source is serving now. Empty when the
 // source cannot be reached, so callers can fall back.
 func (r *Router) liveGoldCodes(ctx context.Context) []string {
-	if r.gold == nil {
-		return nil
-	}
-	board, err := r.gold.Board(ctx)
+	board, err := r.core.GoldBoard(ctx)
 	if err != nil {
 		r.log.Warn("gold help fell back to the built-in code list", "error", err)
 		return nil
@@ -303,10 +302,10 @@ func (r *Router) HandleGold(ctx context.Context, req Request) Reply {
 	if len(req.Args) > 0 && strings.EqualFold(req.Args[0], "help") {
 		return embed(r.goldHelp(ctx))
 	}
-	if r.gold == nil {
+	board, err := r.core.GoldBoard(ctx)
+	if errors.Is(err, ErrNotConfigured) {
 		return embed(NoticeEmbed("Chưa bật", "Tính năng giá vàng chưa được cấu hình.", true))
 	}
-	board, err := r.gold.Board(ctx)
 	if err != nil {
 		r.log.Error("gold command failed", "error", err)
 		return embed(NoticeEmbed("Lỗi", "Không lấy được giá vàng lúc này. Thử lại sau nhé.", true))
@@ -363,7 +362,7 @@ func (r *Router) Handle(ctx context.Context, req Request) Reply {
 	case "ngay":
 		return embed(r.dayReport(ctx, req.Args[1:]))
 	case "quaythu", "quaythử":
-		return r.quayThu(req.ChannelID)
+		return r.quayThu(ctx, req.ChannelID)
 	default:
 		return embed(r.byDate(ctx, strings.Join(req.Args, " ")))
 	}
@@ -373,7 +372,7 @@ func (r *Router) Handle(ctx context.Context, req Request) Reply {
 const ganLimit = 12
 
 func (r *Router) loGan(ctx context.Context) *discordgo.MessageEmbed {
-	entries, err := r.svc.LoGan(ctx, ganLimit)
+	entries, err := r.core.LoGan(ctx, ganLimit)
 	if err != nil {
 		r.log.Error("lo gan failed", "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
@@ -383,7 +382,7 @@ func (r *Router) loGan(ctx context.Context) *discordgo.MessageEmbed {
 }
 
 func (r *Router) deGan(ctx context.Context) *discordgo.MessageEmbed {
-	entries, err := r.svc.DeGan(ctx, ganLimit)
+	entries, err := r.core.DeGan(ctx, ganLimit)
 	if err != nil {
 		r.log.Error("de gan failed", "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
@@ -424,7 +423,7 @@ func (r *Router) tanSo(ctx context.Context, args []string) *discordgo.MessageEmb
 		grouping, grouped = g, true
 	}
 
-	freq, err := r.svc.Frequency(ctx, days)
+	freq, err := r.core.Frequency(ctx, days)
 	if err != nil {
 		r.log.Error("frequency failed", "days", days, "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
@@ -446,7 +445,7 @@ func (r *Router) loProfile(ctx context.Context, args []string) *discordgo.Messag
 		return NoticeEmbed("Không đọc được số",
 			fmt.Sprintf("%q không phải số hai chữ số.\nDùng dạng `%s lo 88`.", args[0], r.prefix), false)
 	}
-	profile, err := r.svc.Profile(ctx, lo)
+	profile, err := r.core.Profile(ctx, lo)
 	if err != nil {
 		r.log.Error("profile failed", "lo", lo, "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
@@ -455,7 +454,7 @@ func (r *Router) loProfile(ctx context.Context, args []string) *discordgo.Messag
 }
 
 func (r *Router) specialMonth(ctx context.Context, args []string) *discordgo.MessageEmbed {
-	now := r.svc.Now()
+	now := r.now()
 	year, month := now.Year(), now.Month()
 	if len(args) > 0 {
 		parsedYear, parsedMonth, err := domain.ParseMonth(strings.Join(args, " "), now)
@@ -466,7 +465,7 @@ func (r *Router) specialMonth(ctx context.Context, args []string) *discordgo.Mes
 		}
 		year, month = parsedYear, parsedMonth
 	}
-	days, err := r.svc.SpecialMonth(ctx, year, month)
+	days, err := r.core.SpecialMonth(ctx, year, month)
 	if err != nil {
 		r.log.Error("special month failed", "year", year, "month", month, "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được thống kê. Thử lại sau nhé.", true)
@@ -482,16 +481,16 @@ func (r *Router) dayReport(ctx context.Context, args []string) *discordgo.Messag
 		err  error
 	)
 	if len(args) == 0 {
-		draw, err = r.svc.Latest(ctx)
+		draw, err = r.core.Latest(ctx)
 	} else {
 		raw := strings.Join(args, " ")
-		day, parseErr := domain.ParseDate(raw, r.svc.Now())
+		day, parseErr := domain.ParseDate(raw, r.now())
 		if parseErr != nil {
 			return NoticeEmbed("Không đọc được ngày",
 				fmt.Sprintf("Mình không hiểu %q.\nDùng dạng `%s ngay 03/09/2026`.",
 					raw, r.prefix), false)
 		}
-		draw, err = r.svc.Get(ctx, day)
+		draw, err = r.core.Draw(ctx, day)
 	}
 	if err != nil {
 		return r.explain(err)
@@ -502,11 +501,11 @@ func (r *Router) dayReport(ctx context.Context, args []string) *discordgo.Messag
 // archive returns the draw count and newest day for the footers. One call,
 // not two - the summary costs three queries.
 func (r *Router) archive(ctx context.Context) (size int, asOf string) {
-	stats, err := r.svc.Stats(ctx)
+	stats, err := r.core.Archive(ctx)
 	if err != nil {
-		return 0, domain.FormatVN(r.svc.Now())
+		return 0, domain.FormatVN(r.now())
 	}
-	asOf = domain.FormatVN(r.svc.Now())
+	asOf = domain.FormatVN(r.now())
 	if !stats.Latest.IsZero() {
 		asOf = domain.FormatVN(stats.Latest)
 	}
@@ -514,7 +513,7 @@ func (r *Router) archive(ctx context.Context) (size int, asOf string) {
 }
 
 func (r *Router) latest(ctx context.Context) *discordgo.MessageEmbed {
-	draw, err := r.svc.Latest(ctx)
+	draw, err := r.core.Latest(ctx)
 	if err != nil {
 		return r.explain(err)
 	}
@@ -522,12 +521,12 @@ func (r *Router) latest(ctx context.Context) *discordgo.MessageEmbed {
 }
 
 func (r *Router) byDate(ctx context.Context, raw string) *discordgo.MessageEmbed {
-	day, err := domain.ParseDate(raw, r.svc.Now())
+	day, err := domain.ParseDate(raw, r.now())
 	if err != nil {
 		return NoticeEmbed("Không đọc được ngày",
 			fmt.Sprintf("Mình không hiểu %q.\nDùng dạng `%s 14/08/2026`.", raw, r.prefix), false)
 	}
-	draw, err := r.svc.Get(ctx, day)
+	draw, err := r.core.Draw(ctx, day)
 	if err != nil {
 		return r.explain(err)
 	}
@@ -543,7 +542,7 @@ func (r *Router) subscribe(ctx context.Context, req Request) *discordgo.MessageE
 		return NoticeEmbed("Không đủ quyền",
 			"Cần quyền **Quản lý kênh** để bật thông báo tự động.", true)
 	}
-	added, err := r.store.Subscribe(ctx, req.GuildID, req.ChannelID)
+	added, err := r.core.Subscribe(ctx, req.GuildID, req.ChannelID)
 	if err != nil {
 		r.log.Error("subscribe failed", "channel", req.ChannelID, "error", err)
 		return NoticeEmbed("Lỗi", "Không lưu được đăng ký. Thử lại sau nhé.", true)
@@ -560,7 +559,7 @@ func (r *Router) unsubscribe(ctx context.Context, req Request) *discordgo.Messag
 		return NoticeEmbed("Không đủ quyền",
 			"Cần quyền **Quản lý kênh** để tắt thông báo tự động.", true)
 	}
-	removed, err := r.store.Unsubscribe(ctx, req.ChannelID)
+	removed, err := r.core.Unsubscribe(ctx, req.ChannelID)
 	if err != nil {
 		r.log.Error("unsubscribe failed", "channel", req.ChannelID, "error", err)
 		return NoticeEmbed("Lỗi", "Không huỷ được đăng ký. Thử lại sau nhé.", true)
@@ -572,7 +571,7 @@ func (r *Router) unsubscribe(ctx context.Context, req Request) *discordgo.Messag
 }
 
 func (r *Router) status(ctx context.Context) *discordgo.MessageEmbed {
-	stats, err := r.svc.Stats(ctx)
+	stats, err := r.core.Archive(ctx)
 	if err != nil {
 		r.log.Error("stats failed", "error", err)
 		return NoticeEmbed("Lỗi", "Không đọc được kho dữ liệu.", true)
@@ -660,10 +659,10 @@ func (r *Router) goldSummary(ctx context.Context) string {
 // "không có" are different answers.
 func (r *Router) explain(err error) *discordgo.MessageEmbed {
 	switch {
-	case errors.Is(err, service.ErrNotYet):
+	case errors.Is(err, domain.ErrNotYet):
 		return NoticeEmbed("Chưa có kết quả",
 			"XSMB quay xong toàn bộ 27 số vào khoảng **18h35**. Thử lại sau ít phút nhé.", false)
-	case errors.Is(err, service.ErrNoResult):
+	case errors.Is(err, domain.ErrNoResult):
 		return NoticeEmbed("Không có kết quả", trimPrefix(err)+" không có kỳ quay nào.", false)
 	case errors.Is(err, domain.ErrOutOfRange):
 		return NoticeEmbed("Ngày không hợp lệ",

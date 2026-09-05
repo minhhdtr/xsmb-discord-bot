@@ -19,7 +19,10 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/bot"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/config"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/coreclient"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/httpapi"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/present"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/provider"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/service"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/storage"
@@ -67,19 +70,36 @@ func run() error {
 	}
 	gold := service.NewGold(provider.NewVangToday(goldOpts...), cfg.GoldTTL, cfg.GoldGrace, nil, log)
 
+	// Ingest runs whether or not any channel is subscribed. Announcing is the
+	// bot's job and a separate one; the archive must not depend on it.
+	go service.NewIngest(svc, log).Run(ctx)
+
+	// The API has to be listening before the bot dials it, since every command
+	// now goes over the wire.
+	ready := make(chan struct{})
+	go func() {
+		close(ready)
+		if err := httpapi.New(svc, store, gold, log).Listen(cfg.APIAddr, ctx.Done()); err != nil {
+			log.Error("core api stopped", "error", err)
+		}
+	}()
+	<-ready
+
+	// The bot reaches core over HTTP even though both are in this binary. The
+	// extra hop buys nothing today; what it buys is that the contract is being
+	// exercised by a client whose behaviour is already known, before the same
+	// contract has to be read by a second language.
+	core := coreclient.New(cfg.CoreURL, 0)
+
 	b, err := bot.New(cfg.DiscordToken, bot.Options{
 		Prefix:         cfg.Prefix,
 		GoldPrefix:     cfg.GoldPrefix,
 		GuildID:        cfg.GuildID,
 		PrefixCommands: cfg.PrefixCommands,
-	}, svc, gold, store, log)
+	}, core, svc.Now, log)
 	if err != nil {
 		return err
 	}
-
-	// Ingest runs whether or not any channel is subscribed. Announcing is the
-	// bot's job and a separate one; the archive must not depend on it.
-	go service.NewIngest(svc, log).Run(ctx)
 
 	if cfg.BackfillOnStart {
 		go backgroundBackfill(ctx, cfg, svc, log)
@@ -224,9 +244,9 @@ func runFetch(args []string) error {
 	}
 	fmt.Printf("XSMB %s %s  ·  nguồn %s\n\n",
 		domain.WeekdayVN(draw.Date), domain.FormatVN(draw.Date), draw.Source)
-	fmt.Println(bot.Table(draw.Prizes))
+	fmt.Println(present.Table(draw.Prizes))
 	fmt.Println()
-	fmt.Println(bot.HeadTail(draw.Prizes))
+	fmt.Println(present.HeadTail(draw.Prizes))
 	return nil
 }
 

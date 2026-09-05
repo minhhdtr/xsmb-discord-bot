@@ -9,8 +9,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/service"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/storage"
 )
 
 // Poster sends one embed to one channel.
@@ -19,8 +17,8 @@ type Poster func(ctx context.Context, channelID string, embed *discordgo.Message
 // Announcer posts each day's result once 18:35 has passed and the page has
 // all 27 numbers.
 type Announcer struct {
-	svc      *service.Service
-	store    storage.Store
+	core     Core
+	now      func() time.Time
 	post     Poster
 	log      *slog.Logger
 	window   time.Duration // how long to keep polling after the draw time
@@ -31,12 +29,15 @@ type Announcer struct {
 
 // NewAnnouncer builds the scheduler. window bounds how long a stalled draw is
 // chased before the run is abandoned until tomorrow.
-func NewAnnouncer(svc *service.Service, store storage.Store, post Poster, log *slog.Logger) *Announcer {
+func NewAnnouncer(core Core, clock func() time.Time, post Poster, log *slog.Logger) *Announcer {
 	if log == nil {
 		log = slog.Default()
 	}
+	if clock == nil {
+		clock = func() time.Time { return time.Now().In(domain.Location()) }
+	}
 	return &Announcer{
-		svc: svc, store: store, post: post, log: log,
+		core: core, now: clock, post: post, log: log,
 		window:   45 * time.Minute,
 		interval: 20 * time.Second,
 		gap:      150 * time.Millisecond,
@@ -58,26 +59,26 @@ func (a *Announcer) SetFanOut(workers int, gap time.Duration) {
 // Run blocks until ctx ends, announcing once a day. On startup it catches up
 // on today if 18:35 has already passed; the DB claim stops duplicates.
 func (a *Announcer) Run(ctx context.Context) {
-	if now := a.svc.Now(); !now.Before(domain.CompletionTime(now)) {
+	if now := a.now(); !now.Before(domain.CompletionTime(now)) {
 		a.RunFor(ctx, domain.DayOf(now))
 	}
 	for {
 		wait := a.untilNext()
-		a.log.Info("announcer waiting", "next_run", a.svc.Now().Add(wait).Format(time.RFC3339))
+		a.log.Info("announcer waiting", "next_run", a.now().Add(wait).Format(time.RFC3339))
 		select {
 		case <-ctx.Done():
 			a.log.Info("announcer stopped")
 			return
 		case <-time.After(wait):
 		}
-		a.RunFor(ctx, domain.DayOf(a.svc.Now()))
+		a.RunFor(ctx, domain.DayOf(a.now()))
 	}
 }
 
 // untilNext is the delay to the next 18:35. Recomputed each cycle so clock
 // drift can't accumulate.
 func (a *Announcer) untilNext() time.Duration {
-	now := a.svc.Now()
+	now := a.now()
 	next := domain.CompletionTime(now)
 	if !now.Before(next) {
 		next = domain.CompletionTime(now.AddDate(0, 0, 1))
@@ -87,7 +88,7 @@ func (a *Announcer) untilNext() time.Duration {
 
 // RunFor waits for day's result, then posts it to every subscribed channel.
 func (a *Announcer) RunFor(ctx context.Context, day time.Time) {
-	subs, err := a.store.Subscriptions(ctx)
+	subs, err := a.core.Subscriptions(ctx)
 	if err != nil {
 		a.log.Error("cannot list subscriptions", "error", err)
 		return
@@ -100,9 +101,9 @@ func (a *Announcer) RunFor(ctx context.Context, day time.Time) {
 	waitCtx, cancel := context.WithTimeout(ctx, a.window)
 	defer cancel()
 
-	draw, err := a.svc.AwaitComplete(waitCtx, day, a.interval)
+	draw, err := awaitComplete(waitCtx, a.core, day, a.interval)
 	if err != nil {
-		if errors.Is(err, service.ErrNoResult) {
+		if errors.Is(err, domain.ErrNoResult) {
 			a.log.Info("no draw to announce", "date", domain.FormatISO(day))
 			return
 		}
@@ -119,7 +120,7 @@ func (a *Announcer) RunFor(ctx context.Context, day time.Time) {
 // fanOut posts to all subscribed channels a few at a time. Discord rate
 // limits per channel, so different channels can be written to in parallel.
 func (a *Announcer) fanOut(ctx context.Context, day time.Time,
-	subs []storage.Subscription, embed *discordgo.MessageEmbed) int {
+	subs []domain.Subscription, embed *discordgo.MessageEmbed) int {
 
 	workers := a.workers
 	if workers < 1 {
@@ -129,7 +130,7 @@ func (a *Announcer) fanOut(ctx context.Context, day time.Time,
 		workers = len(subs)
 	}
 
-	queue := make(chan storage.Subscription)
+	queue := make(chan domain.Subscription)
 	go func() {
 		defer close(queue)
 		for _, sub := range subs {
@@ -177,7 +178,7 @@ func (a *Announcer) fanOut(ctx context.Context, day time.Time,
 func (a *Announcer) postTo(ctx context.Context, day time.Time,
 	channelID string, embed *discordgo.MessageEmbed) bool {
 
-	won, err := a.store.ClaimAnnouncement(ctx, day, channelID)
+	won, err := a.core.ClaimAnnouncement(ctx, day, channelID)
 	if err != nil {
 		a.log.Error("cannot claim announcement", "channel", channelID, "error", err)
 		return false
@@ -188,7 +189,7 @@ func (a *Announcer) postTo(ctx context.Context, day time.Time,
 	if err := a.post(ctx, channelID, embed); err != nil {
 		a.log.Error("cannot post announcement", "channel", channelID, "error", err)
 		// Give the claim back so the next run retries.
-		if err := a.store.ReleaseAnnouncement(ctx, day, channelID); err != nil {
+		if err := a.core.ReleaseAnnouncement(ctx, day, channelID); err != nil {
 			a.log.Error("cannot release claim", "channel", channelID, "error", err)
 		}
 		return false

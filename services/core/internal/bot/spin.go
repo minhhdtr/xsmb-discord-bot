@@ -1,12 +1,13 @@
 package bot
 
 import (
+	"context"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/present"
 )
 
 // colourSpin is deliberately unlike every other embed in the bot. A mock board
@@ -32,15 +33,19 @@ const spinLabel = "QUAY THỬ"
 
 // quayThu builds a whole spin up front. Nothing here reaches the service: a
 // spin is invented, so it must not touch the archive, and the only way to be
-// sure of that is for this path never to call the thing that writes.
-func (r *Router) quayThu(channelID string) Reply {
+// sure of that is for the board to come from an endpoint that stores nothing.
+func (r *Router) quayThu(ctx context.Context, channelID string) Reply {
 	if until, busy := r.spinning(channelID); busy {
 		return embed(NoticeEmbed("Đang quay",
 			fmt.Sprintf("Kênh này đang có một lượt quay. Thử lại sau %d giây nhé.",
 				int(time.Until(until).Seconds())+1), false))
 	}
 
-	spin := domain.NewSpin(rand.Intn)
+	spin, err := r.core.Spin(ctx)
+	if err != nil {
+		r.log.Error("spin failed", "error", err)
+		return embed(NoticeEmbed("Lỗi", "Không quay được. Thử lại sau nhé.", true))
+	}
 	frames := make([]*discordgo.MessageEmbed, 0, spin.Steps()+1)
 	for step := 0; step <= spin.Steps(); step++ {
 		frames = append(frames, SpinEmbed(spin, step))
@@ -55,7 +60,7 @@ func (r *Router) spinning(channelID string) (time.Time, bool) {
 	r.spinMu.Lock()
 	defer r.spinMu.Unlock()
 
-	now := r.svc.Now()
+	now := r.now()
 	if until, ok := r.spins[channelID]; ok && now.Before(until) {
 		return until, true
 	}
@@ -91,7 +96,7 @@ func SpinEmbed(spin domain.Spin, step int) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{
 		Title:       "🎰 " + spinLabel,
 		Color:       colourSpin,
-		Description: fmt.Sprintf("%s\n```\n%s\n```", headline, TableOf(cells)),
+		Description: fmt.Sprintf("%s\n```\n%s\n```", headline, present.TableOf(cells)),
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: fmt.Sprintf("Số ngẫu nhiên, quay cho vui · %d/%d",
 				min(step, spin.Steps()), spin.Steps()),
@@ -104,7 +109,7 @@ func cellLabel(at int) string {
 	offset := 0
 	for tier, spec := range domain.PrizeLayout {
 		if at < offset+spec.Count {
-			return shortLabels[tier]
+			return present.ShortLabels[tier]
 		}
 		offset += spec.Count
 	}

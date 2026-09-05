@@ -1,0 +1,750 @@
+openapi: 3.0.3
+
+info:
+  title: xsmb core
+  version: "1.0.0"
+  description: |
+    Read access to the XSMB archive and the statistics derived from it.
+
+    Two conventions run through the whole document.
+
+    **Dates are ISO.** `2026-09-04`, never `04/09/2026`. The Vietnamese forms
+    are what people type, and parsing them is the client's job. A machine
+    interface should not have to guess whether `03/09` is March or September.
+
+    **Rendered text sits beside the raw data.** Responses that a client would
+    lay out as a monospace table carry a `table` field holding that table,
+    already drawn. Which prize has how many numbers of how many digits is
+    domain knowledge, not a Discord concept, and the column arithmetic is the
+    part most likely to go wrong when it is written a second time in another
+    language. A client that would rather draw its own can ignore the field;
+    nothing else changes.
+
+servers:
+  - url: http://core:8080
+    description: Inside the compose network. Not exposed publicly.
+
+tags:
+  - name: draws
+  - name: stats
+  - name: spins
+  - name: gold
+  - name: subscriptions
+  - name: ops
+
+paths:
+  /healthz:
+    get:
+      tags: [ops]
+      summary: Liveness
+      operationId: health
+      responses:
+        "200":
+          description: Serving
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+
+  /v1/archive:
+    get:
+      tags: [ops]
+      summary: What the archive holds
+      description: Counts for the footers, and the span the archive covers.
+      operationId: getArchive
+      responses:
+        "200":
+          description: Archive summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Archive" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/draws/latest:
+    get:
+      tags: [draws]
+      summary: The newest result available
+      description: |
+        Which day that is depends on the clock, and the rule is not simply
+        "today after 18:35": the balls finish a little earlier, so shortly
+        before the mark this reaches for today and falls back to yesterday if
+        the source is not up yet.
+
+        That rule lives here rather than in each client. Two copies of a rule
+        with a time in it are two copies that will disagree.
+      operationId: getLatestDraw
+      responses:
+        "200":
+          description: A draw
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draw" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/draws/{date}:
+    get:
+      tags: [draws]
+      summary: One day's result
+      description: |
+        Served from the archive when it is there. When it is not, the source is
+        crawled once and the result stored, so a second request for the same
+        day is a read. Concurrent requests for one day collapse into a single
+        crawl.
+      operationId: getDraw
+      parameters:
+        - $ref: "#/components/parameters/DatePath"
+      responses:
+        "200":
+          description: A draw
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draw" }
+        "404":
+          description: |
+            `not_yet` when the source has not published it, `no_draw` when the
+            day is settled and empty. The two are different: one is worth
+            asking again for, the other is not.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/stats/day:
+    get:
+      tags: [stats]
+      summary: One draw read closely
+      description: Kép, nháy, đầu and đuôi counts, the digits the special touches.
+      operationId: getDayReport
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: Defaults to the newest result available.
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: A day report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DayReport" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/stats/gan:
+    get:
+      tags: [stats]
+      summary: Numbers that have not landed for the longest
+      operationId: getGan
+      parameters:
+        - name: scope
+          in: query
+          description: |
+            `lo` counts all 27 numbers; `de` counts only the special prize, so
+            its gaps are around a hundred times longer.
+          schema:
+            type: string
+            enum: [lo, de]
+            default: lo
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Gan entries, longest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Gan" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/stats/frequency:
+    get:
+      tags: [stats]
+      summary: How often numbers landed
+      description: |
+        Without `group`, one entry per number that appeared. With `group`, the
+        hundred numbers folded into ten buckets.
+
+        Only hits survive the fold. A number's `days` cannot be added across a
+        bucket, because two numbers in one bucket can land on the same draw and
+        adding their day counts would count that draw twice.
+      operationId: getFrequency
+      parameters:
+        - name: days
+          in: query
+          description: Window in days. Omit for the whole archive.
+          schema: { type: integer, minimum: 1, default: 30 }
+        - name: group
+          in: query
+          description: |
+            `dau` first digit, `duoi` last, `tong` the two added and the last
+            digit kept, `cham` either digit. Under `cham` one number falls in
+            two buckets, so the buckets total more than the numbers drawn.
+          schema:
+            type: string
+            enum: [dau, duoi, tong, cham]
+      responses:
+        "200":
+          description: Ungrouped when `group` is absent, grouped when present
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FrequencyList"
+                  - $ref: "#/components/schemas/GroupedFrequency"
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/stats/number/{lo}:
+    get:
+      tags: [stats]
+      summary: Everything about one two-digit number
+      operationId: getNumberProfile
+      parameters:
+        - name: lo
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9]{2}$" }
+      responses:
+        "200":
+          description: A profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/stats/special-month:
+    get:
+      tags: [stats]
+      summary: A month of special prizes
+      operationId: getSpecialMonth
+      parameters:
+        - name: month
+          in: query
+          description: "`2026-09`. Defaults to the current month."
+          schema: { type: string, pattern: "^[0-9]{4}-[0-9]{2}$" }
+      responses:
+        "200":
+          description: The month, earliest day first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SpecialMonth" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/spins:
+    post:
+      tags: [spins]
+      summary: Draw a made-up board
+      description: |
+        Twenty-seven random numbers, plus the order to reveal them in: first
+        prize down to seventh, then the special last.
+
+        POST because each call invents a new board. Nothing is stored, and this
+        never touches the archive - a client must not be able to confuse a spin
+        with a result, and keeping the two apart starts here.
+
+        Pacing the reveal is the client's business: how fast a message can be
+        edited is a property of the chat platform, not of the draw.
+      operationId: createSpin
+      responses:
+        "201":
+          description: A spin
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Spin" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/gold:
+    get:
+      tags: [gold]
+      summary: Current gold prices
+      description: |
+        Cached in core, not in the client. A burst of commands causes one fetch
+        upstream, and a stale board is served for a while when the source is
+        failing, because a price from a few minutes ago beats an error message.
+        Putting that in each client would mean each client getting it slightly
+        wrong.
+      operationId: getGold
+      responses:
+        "200":
+          description: A board
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoldBoard" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/gold/{code}/history:
+    get:
+      tags: [gold]
+      summary: Daily prices for one gold type
+      operationId: getGoldHistory
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 2, maximum: 3650, default: 30 }
+      responses:
+        "200":
+          description: A series, oldest point first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoldSeries" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/gold/{code}/chart.png:
+    get:
+      tags: [gold]
+      summary: The price history as a PNG
+      description: |
+        Rendered in core rather than by the client. The chart is drawn from the
+        same series the history endpoint returns, so a client could draw its
+        own - but the drawing code already exists here, it is identical for
+        every client, and a chart that differs between platforms is a bug
+        nobody would think to look for.
+
+        The font is ASCII only, which is why labels with diacritics belong in
+        the surrounding message rather than on the image.
+      operationId: getGoldChart
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 2, maximum: 3650, default: 30 }
+      responses:
+        "200":
+          description: A chart
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "422":
+          description: Fewer than two points, so there is nothing to plot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/subscriptions:
+    get:
+      tags: [subscriptions]
+      summary: Channels awaiting the daily announcement
+      operationId: listSubscriptions
+      responses:
+        "200":
+          description: Every subscription
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Subscription" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/subscriptions/{channel_id}:
+    put:
+      tags: [subscriptions]
+      summary: Subscribe a channel
+      description: |
+        Idempotent. `created` distinguishes a new subscription from one that
+        already existed, which is the difference between "đã bật" and "vốn đã
+        bật" in the reply a person sees.
+      operationId: subscribe
+      parameters: [{ $ref: "#/components/parameters/ChannelID" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                guild_id: { type: string }
+      responses:
+        "200":
+          description: Subscribed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel_id, created]
+                properties:
+                  channel_id: { type: string }
+                  created: { type: boolean }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [subscriptions]
+      summary: Unsubscribe a channel
+      description: Idempotent. `removed` is false when there was nothing to remove.
+      operationId: unsubscribe
+      parameters: [{ $ref: "#/components/parameters/ChannelID" }]
+      responses:
+        "200":
+          description: Unsubscribed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel_id, removed]
+                properties:
+                  channel_id: { type: string }
+                  removed: { type: boolean }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/announcements/{date}/{channel_id}:
+    post:
+      tags: [subscriptions]
+      summary: Claim the right to announce a day to a channel
+      description: |
+        Succeeds exactly once per day and channel, across restarts and across
+        instances. A client claims before it posts; if the post fails it
+        releases the claim so the next run tries again.
+
+        This is what stops a restart at 18:50 from posting the same result a
+        second time. It has to be settled in the database rather than in the
+        client, because a client that has just restarted remembers nothing.
+      operationId: claimAnnouncement
+      parameters:
+        - { $ref: "#/components/parameters/DatePath" }
+        - { $ref: "#/components/parameters/ChannelID" }
+      responses:
+        "201":
+          description: Claim won; the caller should post
+        "409":
+          description: Already claimed; the caller must not post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [subscriptions]
+      summary: Give a claim back after a failed send
+      operationId: releaseAnnouncement
+      parameters:
+        - { $ref: "#/components/parameters/DatePath" }
+        - { $ref: "#/components/parameters/ChannelID" }
+      responses:
+        "204":
+          description: Released
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  parameters:
+    DatePath:
+      name: date
+      in: path
+      required: true
+      schema: { type: string, format: date }
+      example: "2026-09-04"
+
+    ChannelID:
+      name: channel_id
+      in: path
+      required: true
+      description: |
+        Opaque to core, which never interprets it. Today it is a Discord
+        channel; a second client would add a platform alongside it rather than
+        overload this.
+      schema: { type: string, minLength: 1 }
+
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+
+  responses:
+    Error:
+      description: Something went wrong
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Switch on this, not on `message`. Wording is for logs and may
+            change; these values are the contract.
+          enum:
+            - bad_request
+            - out_of_range
+            - not_yet
+            - no_draw
+            - upstream
+            - internal
+            - already_claimed
+            - not_configured
+            - too_short
+        message:
+          type: string
+          description: A human-readable detail, for logs. Not display copy.
+
+    GoldQuote:
+      type: object
+      required: [code, name, buy, currency]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        buy: { type: number }
+        sell: { type: number, description: Zero when the source quotes one side only. }
+        change_buy: { type: number }
+        change_sell: { type: number }
+        currency: { type: string }
+
+    GoldBoard:
+      type: object
+      required: [quotes, source]
+      properties:
+        quotes:
+          type: array
+          items: { $ref: "#/components/schemas/GoldQuote" }
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the source says the prices were set.
+        fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When core asked. Different from updated_at on a stale board.
+        source: { type: string }
+
+    GoldSeries:
+      type: object
+      required: [code, name, currency, points]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        currency: { type: string }
+        points:
+          type: array
+          description: Oldest first. The order is part of the meaning.
+          items:
+            type: object
+            required: [date, buy, sell]
+            properties:
+              date: { type: string, format: date }
+              buy: { type: number }
+              sell: { type: number }
+
+    Subscription:
+      type: object
+      required: [channel_id]
+      properties:
+        channel_id: { type: string }
+        guild_id: { type: string }
+
+    Archive:
+      type: object
+      required: [draws, absences, channels]
+      properties:
+        draws: { type: integer }
+        absences:
+          type: integer
+          description: Days confirmed to have had no draw.
+        channels: { type: integer, description: Subscribed channels. }
+        earliest: { type: string, format: date, nullable: true }
+        latest: { type: string, format: date, nullable: true }
+
+    Draw:
+      type: object
+      required: [date, weekday, special, de, numbers, tails, table, source]
+      properties:
+        date: { type: string, format: date }
+        weekday:
+          type: string
+          description: Vietnamese, e.g. "Thứ Sáu". Naming, not formatting.
+          example: Thứ Sáu
+        special: { type: string, example: "50066" }
+        de:
+          type: string
+          description: The last two digits of the special prize.
+          example: "66"
+        numbers:
+          type: array
+          description: All 27, in board order, special first.
+          items: { type: string }
+          minItems: 27
+          maxItems: 27
+        tails:
+          type: array
+          description: The 27 two-digit tails, sorted.
+          items: { type: string, pattern: "^[0-9]{2}$" }
+          minItems: 27
+          maxItems: 27
+        table:
+          type: string
+          description: The board as aligned monospace text, no fences.
+        head_tail:
+          type: string
+          description: The đầu đuôi table as aligned monospace text.
+        source: { type: string, example: xoso.com.vn }
+        fetched_at: { type: string, format: date-time, nullable: true }
+
+    DayReport:
+      type: object
+      required: [date, de, cham_dau, cham_duoi, tong_de, heads, tails, table]
+      properties:
+        date: { type: string, format: date }
+        de: { type: string }
+        cham_dau: { type: integer, minimum: 0, maximum: 9 }
+        cham_duoi: { type: integer, minimum: 0, maximum: 9 }
+        tong_de: { type: integer, minimum: 0, maximum: 9 }
+        kep:
+          type: array
+          description: Numbers with two identical digits, each listed once.
+          items: { type: string }
+        nhay:
+          type: array
+          description: Numbers that landed more than once.
+          items:
+            type: object
+            required: [number, hits]
+            properties:
+              number: { type: string }
+              hits: { type: integer, minimum: 2 }
+        heads:
+          type: array
+          description: Count per first digit, index 0 to 9.
+          items: { type: integer }
+          minItems: 10
+          maxItems: 10
+        tails:
+          type: array
+          items: { type: integer }
+          minItems: 10
+          maxItems: 10
+        mute_heads: { type: array, items: { type: integer } }
+        mute_tails: { type: array, items: { type: integer } }
+        top_heads: { type: array, items: { type: integer } }
+        top_tails: { type: array, items: { type: integer } }
+        table: { type: string }
+
+    Gan:
+      type: object
+      required: [number, days, record, new_record]
+      properties:
+        number: { type: string }
+        days: { type: integer }
+        record: { type: integer }
+        new_record:
+          type: boolean
+          description: The current run has passed the old record.
+        last_seen: { type: string, format: date, nullable: true }
+        record_end: { type: string, format: date, nullable: true }
+
+    FrequencyList:
+      type: object
+      required: [grouped, days, entries]
+      properties:
+        grouped: { type: boolean, enum: [false] }
+        days: { type: integer, description: 0 means the whole archive. }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [number, hits, days]
+            properties:
+              number: { type: string }
+              hits: { type: integer }
+              days: { type: integer, description: Draws the number appeared in. }
+
+    GroupedFrequency:
+      type: object
+      required: [grouped, days, group, buckets, total, even, overlaps, table]
+      properties:
+        grouped: { type: boolean, enum: [true] }
+        days: { type: integer }
+        group: { type: string, enum: [dau, duoi, tong, cham] }
+        buckets:
+          type: array
+          items:
+            type: object
+            required: [digit, hits]
+            properties:
+              digit: { type: integer, minimum: 0, maximum: 9 }
+              hits: { type: integer }
+          minItems: 10
+          maxItems: 10
+        total:
+          type: integer
+          description: Placements counted. Above the numbers drawn when `overlaps`.
+        even:
+          type: number
+          description: total / 10, the flat line the buckets vary around.
+        overlaps:
+          type: boolean
+          description: True only for `cham`, where one number falls in two buckets.
+        table: { type: string }
+
+    Profile:
+      type: object
+      required: [number, gan, windows, recent, archive]
+      properties:
+        number: { type: string }
+        gan: { $ref: "#/components/schemas/Gan" }
+        windows:
+          type: array
+          items:
+            type: object
+            required: [label, days, hits]
+            properties:
+              label: { type: string }
+              days: { type: integer, description: 0 means the whole archive. }
+              hits: { type: integer }
+        recent:
+          type: array
+          description: Oldest first, one entry per draw in the window.
+          items:
+            type: object
+            required: [date, hits]
+            properties:
+              date: { type: string, format: date }
+              hits: { type: integer }
+        avg_cycle:
+          type: number
+          description: Mean calendar days between appearances. 0 when unknown.
+        first: { type: string, format: date, nullable: true }
+        archive: { type: integer }
+
+    SpecialMonth:
+      type: object
+      required: [month, days, table]
+      properties:
+        month: { type: string, example: "2026-09" }
+        days:
+          type: array
+          items:
+            type: object
+            required: [date, special, de]
+            properties:
+              date: { type: string, format: date }
+              special: { type: string }
+              de: { type: string }
+        table: { type: string }
+
+    Spin:
+      type: object
+      required: [numbers, order]
+      properties:
+        numbers:
+          type: array
+          description: All 27, in board order, special first.
+          items: { type: string }
+          minItems: 27
+          maxItems: 27
+        order:
+          type: array
+          description: |
+            Indices into `numbers`, in reveal order. The special is stored
+            first and revealed last, so this is not 0..26.
+          items: { type: integer, minimum: 0, maximum: 26 }
+          minItems: 27
+          maxItems: 27

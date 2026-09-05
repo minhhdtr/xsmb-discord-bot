@@ -1,0 +1,26 @@
+{
+  "name": "xsmb-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "gen:api": "openapi-typescript ../../contracts/openapi.yaml -o src/core/schema.d.ts",
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "tsc && node --test \"dist/test/*.test.js\"",
+    "start": "node dist/src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "luxon": "^3.7.2"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^22.10.2",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.7.2"
+  }
+}
