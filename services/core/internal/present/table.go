@@ -22,7 +22,7 @@ import (
 )
 
 // Row headings. The full domain labels are too long for a phone.
-var ShortLabels = [domain.PrizeGroups]string{
+var shortLabels = [domain.PrizeGroups]string{
 	"Đặc biệt", "Nhất", "Nhì", "Ba", "Tư", "Năm", "Sáu", "Bảy",
 }
 
@@ -37,13 +37,13 @@ func Table(prizes domain.Prizes) string {
 	if !prizes.Valid() {
 		return ""
 	}
-	return TableOf(prizes.Numbers())
+	return tableOf(prizes.Numbers())
 }
 
-// TableOf lays out 27 cells the same way, without needing a valid Prizes. A
+// tableOf lays out 27 cells the same way, without needing a valid Prizes. A
 // blank cell becomes dots the width of the number that goes there, which is
 // what lets a spin show a board that is only part drawn.
-func TableOf(cells []string) string {
+func tableOf(cells []string) string {
 	if len(cells) != domain.TotalNumbers {
 		return ""
 	}
@@ -72,9 +72,9 @@ func TableOf(cells []string) string {
 			}
 			heading := ""
 			if line == 0 {
-				heading = ShortLabels[tier]
+				heading = shortLabels[tier]
 			}
-			b.WriteString(PadRunes(heading, labelWidth))
+			b.WriteString(padRunes(heading, labelWidth))
 			b.WriteString(strings.Join(numbers[start:end], "  "))
 			b.WriteByte('\n')
 		}
@@ -103,7 +103,7 @@ func HeadTail(prizes domain.Prizes) string {
 
 // padRunes pads by runes, not bytes - Vietnamese headings are multibyte and
 // byte padding misaligns every row.
-func PadRunes(s string, width int) string {
+func padRunes(s string, width int) string {
 	count := len([]rune(s))
 	if count >= width {
 		return s + " "

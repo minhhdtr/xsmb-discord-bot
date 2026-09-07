@@ -99,6 +99,8 @@ type windowBody struct {
 	Label string `json:"label"`
 	Days  int    `json:"days"`
 	Hits  int    `json:"hits"`
+	Draws int    `json:"draws"`
+	Total int    `json:"total"`
 }
 
 type dayHitBody struct {

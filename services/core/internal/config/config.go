@@ -13,10 +13,8 @@ import (
 
 // Config is everything the bot needs to start.
 type Config struct {
-	DiscordToken string
-	DatabaseURL  string
-	Prefix       string
-	LogLevel     string
+	DatabaseURL string
+	LogLevel    string
 	// SourceBaseURL overrides the site the crawler reads. Empty means default.
 	SourceBaseURL string
 
@@ -33,8 +31,6 @@ type Config struct {
 	// Zero, the default, means no pacing.
 	BackfillRate time.Duration
 
-	// GoldPrefix is the command that shows gold prices. Empty disables it.
-	GoldPrefix string
 	// GoldURL is the price source.
 	GoldURL string
 	// GoldTTL is how long a fetched board is reused.
@@ -43,17 +39,6 @@ type Config struct {
 	// failing. A price from a few minutes ago beats an error message.
 	GoldGrace time.Duration
 
-	// GuildID registers slash commands to one server, where they appear at
-	// once. Empty registers them globally, which can take an hour to spread.
-	GuildID string
-	// PrefixCommands keeps the !xsmb form working. Turning it off also drops
-	// the Message Content intent, which is privileged.
-	PrefixCommands bool
-
-	// CoreURL is where the bot reaches the core API. Same process today, its
-	// own container tomorrow; the bot does not know the difference.
-	CoreURL string
-
 	// APIAddr is where the core HTTP API listens. It carries no secrets and
 	// has no auth, so the default binds inside the container only; publishing
 	// it is a deliberate act, not a default.
@@ -61,28 +46,17 @@ type Config struct {
 }
 
 // Load reads and validates the environment, failing at startup rather than
-// letting the bot connect and misbehave.
+// letting the service come up and misbehave.
 func Load() (Config, error) {
 	c := Config{
-		DiscordToken:  strings.TrimSpace(os.Getenv("DISCORD_TOKEN")),
 		DatabaseURL:   strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		Prefix:        strings.TrimSpace(os.Getenv("COMMAND_PREFIX")),
 		LogLevel:      strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))),
 		SourceBaseURL: strings.TrimSpace(os.Getenv("XOSO_BASE_URL")),
-		GoldPrefix:    strings.TrimSpace(os.Getenv("GOLD_PREFIX")),
 		GoldURL:       strings.TrimSpace(os.Getenv("GOLD_URL")),
-		GuildID:       strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID")),
 		APIAddr:       strings.TrimSpace(os.Getenv("API_ADDR")),
-		CoreURL:       strings.TrimSpace(os.Getenv("CORE_URL")),
-	}
-	if c.GoldPrefix == "" {
-		c.GoldPrefix = "!gold"
 	}
 	if c.APIAddr == "" {
 		c.APIAddr = ":8080"
-	}
-	if c.CoreURL == "" {
-		c.CoreURL = "http://127.0.0.1" + c.APIAddr
 	}
 
 	var problems []string
@@ -92,7 +66,6 @@ func Load() (Config, error) {
 	c.BackfillRate = durationEnv("BACKFILL_RATE", 0, &problems)
 	c.GoldTTL = durationEnv("GOLD_TTL", 2*time.Minute, &problems)
 	c.GoldGrace = durationEnv("GOLD_GRACE", 30*time.Minute, &problems)
-	c.PrefixCommands = boolEnv("PREFIX_COMMANDS", true, &problems)
 	if raw := strings.TrimSpace(os.Getenv("BACKFILL_FROM")); raw != "" {
 		parsed, err := domain.ParseDate(raw, time.Now().In(domain.Location()))
 		if err != nil {
@@ -101,27 +74,12 @@ func Load() (Config, error) {
 			c.BackfillFrom = parsed
 		}
 	}
-	if c.Prefix == "" {
-		c.Prefix = "!xsmb"
-	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
 	}
 
-	if c.DiscordToken == "" {
-		problems = append(problems, "DISCORD_TOKEN is empty")
-	}
 	if c.DatabaseURL == "" {
 		problems = append(problems, "DATABASE_URL is empty")
-	}
-	if strings.ContainsAny(c.Prefix, " \t") {
-		problems = append(problems, "COMMAND_PREFIX must not contain spaces")
-	}
-	if strings.ContainsAny(c.GoldPrefix, " \t") {
-		problems = append(problems, "GOLD_PREFIX must not contain spaces")
-	}
-	if c.GoldPrefix != "" && c.GoldPrefix == c.Prefix {
-		problems = append(problems, "GOLD_PREFIX and COMMAND_PREFIX must differ")
 	}
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("bad configuration: %s", strings.Join(problems, "; "))

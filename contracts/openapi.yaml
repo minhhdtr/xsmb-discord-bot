@@ -499,7 +499,7 @@ components:
 
     GoldBoard:
       type: object
-      required: [quotes, source]
+      required: [quotes, updated_at, fetched_at, source]
       properties:
         quotes:
           type: array
@@ -543,7 +543,9 @@ components:
 
     Archive:
       type: object
-      required: [draws, absences, channels]
+      # earliest and latest are nullable, not optional: the keys are always
+      # there, holding null on an empty archive.
+      required: [draws, absences, channels, earliest, latest]
       properties:
         draws: { type: integer }
         absences:
@@ -555,7 +557,9 @@ components:
 
     Draw:
       type: object
-      required: [date, weekday, special, de, numbers, tails, table, source]
+      required:
+        [date, weekday, special, de, numbers, tails, table, head_tail, source,
+         fetched_at]
       properties:
         date: { type: string, format: date }
         weekday:
@@ -590,7 +594,13 @@ components:
 
     DayReport:
       type: object
-      required: [date, de, cham_dau, cham_duoi, tong_de, heads, tails, table]
+      # Every field is always sent, including the arrays that are usually
+      # empty. A nil slice would marshal as null and force each client to guard
+      # against a missing array when the honest answer is "none";
+      # TestEmptyListsAreArraysNotNull holds the server to that.
+      required:
+        [date, de, cham_dau, cham_duoi, tong_de, kep, nhay, heads, tails,
+         mute_heads, mute_tails, top_heads, top_tails, table]
       properties:
         date: { type: string, format: date }
         de: { type: string }
@@ -629,7 +639,7 @@ components:
 
     Gan:
       type: object
-      required: [number, days, record, new_record]
+      required: [number, days, record, new_record, last_seen, record_end]
       properties:
         number: { type: string }
         days: { type: integer }
@@ -686,7 +696,7 @@ components:
 
     Profile:
       type: object
-      required: [number, gan, windows, recent, archive]
+      required: [number, gan, windows, recent, avg_cycle, first, archive]
       properties:
         number: { type: string }
         gan: { $ref: "#/components/schemas/Gan" }
@@ -694,11 +704,17 @@ components:
           type: array
           items:
             type: object
-            required: [label, days, hits]
+            required: [label, days, hits, draws, total]
             properties:
               label: { type: string }
               days: { type: integer, description: 0 means the whole archive. }
-              hits: { type: integer }
+              hits:
+                type: integer
+                description: Appearances, counting a number that landed twice as two.
+              draws:
+                type: integer
+                description: Draws in the window that held the number at all.
+              total: { type: integer, description: Draws in the window. }
         recent:
           type: array
           description: Oldest first, one entry per draw in the window.

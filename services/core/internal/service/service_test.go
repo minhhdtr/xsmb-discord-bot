@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -286,53 +285,5 @@ func TestConcurrentMissesShareOneCrawl(t *testing.T) {
 	}
 	if src.Calls() != 1 {
 		t.Fatalf("crawled %d times, want 1", src.Calls())
-	}
-}
-
-func TestAwaitCompleteRetriesUntilPublished(t *testing.T) {
-	today := domain.NewDate(2026, 8, 21)
-	src := &fakeProvider{script: []domain.Outcome{
-		domain.Failed(fmt.Errorf("parse: %w", domain.ErrIncomplete)),
-		domain.Failed(fmt.Errorf("parse: %w", domain.ErrIncomplete)),
-		domain.Found(drawFor(t, today)),
-	}}
-	svc, _ := newService(t, src, func() time.Time { return at(18, 30) })
-
-	draw, err := svc.AwaitComplete(context.Background(), today, time.Millisecond)
-	if err != nil {
-		t.Fatalf("AwaitComplete: %v", err)
-	}
-	if !draw.Date.Equal(today) || src.Calls() != 3 {
-		t.Fatalf("date=%s calls=%d", domain.FormatVN(draw.Date), src.Calls())
-	}
-}
-
-func TestAwaitCompleteStopsOnSettledAbsence(t *testing.T) {
-	day := domain.NewDate(2011, 3, 7)
-	src := &fakeProvider{fallback: func(time.Time) domain.Outcome { return domain.Absent() }}
-	svc, _ := newService(t, src, func() time.Time { return at(20, 0) })
-
-	start := time.Now()
-	_, err := svc.AwaitComplete(context.Background(), day, time.Hour)
-	if !errors.Is(err, service.ErrNoResult) {
-		t.Fatalf("err = %v, want ErrNoResult", err)
-	}
-	if time.Since(start) > time.Second {
-		t.Fatal("AwaitComplete slept instead of returning a settled answer")
-	}
-}
-
-func TestAwaitCompleteGivesUpWhenContextEnds(t *testing.T) {
-	today := domain.NewDate(2026, 8, 21)
-	src := &fakeProvider{fallback: func(time.Time) domain.Outcome {
-		return domain.Failed(fmt.Errorf("parse: %w", domain.ErrIncomplete))
-	}}
-	svc, _ := newService(t, src, func() time.Time { return at(18, 40) })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	_, err := svc.AwaitComplete(ctx, today, 5*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), "gave up") {
-		t.Fatalf("err = %v, want a give-up error", err)
 	}
 }

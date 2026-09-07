@@ -172,7 +172,8 @@ func (s *Server) numberProfile(w http.ResponseWriter, r *http.Request) {
 		Archive:  profile.Archive,
 	}
 	for _, win := range profile.Windows {
-		body.Windows = append(body.Windows, windowBody{Label: win.Label, Days: win.Days, Hits: win.Hits})
+		body.Windows = append(body.Windows, windowBody{Label: win.Label, Days: win.Days,
+			Hits: win.Hits, Draws: win.Draws, Total: win.Total})
 	}
 	for _, hit := range profile.Recent {
 		body.Recent = append(body.Recent, dayHitBody{Date: isoDate(hit.Day), Hits: hit.Hits})

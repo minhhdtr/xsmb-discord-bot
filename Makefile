@@ -23,7 +23,7 @@ restart: ## Rebuild and restart just the bot
 	$(COMPOSE) up -d --build bot
 
 build:   ## Build the core binary locally
-	cd $(CORE) && go build -mod=vendor -o ../../bin/core ./cmd/xsmb-discord-bot
+	cd $(CORE) && go build -mod=vendor -o ../../bin/core ./cmd/core
 
 test:    ## Run the core test suite
 	cd $(CORE) && go test -mod=vendor ./...
@@ -32,10 +32,10 @@ race:    ## Run the core test suite under the race detector
 	cd $(CORE) && go test -mod=vendor -race ./...
 
 fetch:   ## Crawl one day and print it. Needs no token, no database. make fetch DATE=14/08/2026
-	cd $(CORE) && go run -mod=vendor ./cmd/xsmb-discord-bot fetch $(DATE)
+	cd $(CORE) && go run -mod=vendor ./cmd/core fetch $(DATE)
 
 gold:    ## Print the current gold board. Needs no token, no database
-	cd $(CORE) && go run -mod=vendor ./cmd/xsmb-discord-bot gold
+	cd $(CORE) && go run -mod=vendor ./cmd/core gold
 
 backfill: ## Fill the archive, then exit. make backfill [FROM=01/10/2005] [JOBS=16] [RATE=200ms]
 	$(COMPOSE) run --rm backfill $(if $(FROM),--from $(FROM)) $(if $(JOBS),--concurrency $(JOBS)) $(if $(RATE),--rate $(RATE))

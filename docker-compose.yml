@@ -18,7 +18,7 @@ services:
     # ports:
     #   - "127.0.0.1:5432:5432"
 
-  bot:
+  core:
     build: ./services/core
     env_file: .env
     # No ports: mapping, and it must stay that way. The core API has no auth,
@@ -30,6 +30,15 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    # The API answering is what "core is up" means to anything downstream.
+    # Without this, depends_on only waits for the container to start, which is
+    # true several seconds before the first request can be served.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
   # Not started by `docker compose up`. Run it by hand for a large backfill:
   #   docker compose run --rm backfill --from 01/10/2005
@@ -42,7 +51,26 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    entrypoint: ["xsmb-discord-bot", "backfill"]
+    entrypoint: ["core", "backfill"]
+
+  # The Discord client.
+  bot:
+    build: ./services/bot
+    # Deliberately no env_file: this service needs none of core's database or
+    # crawler settings, and naming what it does need keeps that visible.
+    #
+    # The `:?` on the token makes compose refuse to start with a readable
+    # message rather than the container crash-looping on a missing variable.
+    environment:
+      CORE_URL: http://core:8080
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      COMMAND_PREFIX: ${COMMAND_PREFIX:-!xsmb}
+      GOLD_PREFIX: ${GOLD_PREFIX:-!gold}
+    depends_on:
+      core:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:

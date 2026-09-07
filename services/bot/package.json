@@ -10,7 +10,7 @@
     "gen:api": "openapi-typescript ../../contracts/openapi.yaml -o src/core/schema.d.ts",
     "build": "tsc",
     "check": "tsc --noEmit",
-    "test": "tsc && node --test \"dist/test/*.test.js\"",
+    "test": "tsc && node --test --test-concurrency=1 \"dist/test/*.test.js\"",
     "start": "node dist/src/index.js"
   },
   "dependencies": {

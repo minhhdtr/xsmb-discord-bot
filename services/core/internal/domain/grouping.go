@@ -40,21 +40,6 @@ func ParseGrouping(input string) (Grouping, error) {
 	return 0, fmt.Errorf("%q: %w", input, ErrBadGrouping)
 }
 
-// Label names a grouping for a heading.
-func (g Grouping) Label() string {
-	switch g {
-	case ByHead:
-		return "đầu"
-	case ByTail:
-		return "đuôi"
-	case BySum:
-		return "tổng"
-	case ByTouch:
-		return "chạm"
-	}
-	return ""
-}
-
 // Overlaps reports whether one lô can land in more than one bucket. Only
 // ByTouch does: 87 touches both 8 and 7, so the buckets add up to more than
 // the number of lô drawn. Callers say so rather than letting the total look

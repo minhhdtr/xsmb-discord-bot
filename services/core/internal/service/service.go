@@ -77,8 +77,8 @@ func (s *Service) Now() time.Time { return s.now().In(domain.Location()) }
 // means the day had no draw at all.
 //
 // Marking an absence is a one-way door. Get checks IsAbsent before it will
-// crawl, AwaitComplete treats ErrNoResult as settled and stops polling, and
-// Backfill goes through Get as well. Only SaveDraw clears an absence, and
+// crawl, a client polling for a day treats ErrNoResult as settled and stops,
+// and Backfill goes through Get as well. Only SaveDraw clears an absence, and
 // once a day is marked nothing reaches SaveDraw for it again - the day stays
 // empty until someone deletes the row by hand. The source publishes tier by
 // tier, so a blank or unparseable page just after the mark is far more likely
@@ -93,8 +93,7 @@ const absenceGrace = 45 * time.Minute
 // Single-flight collapses requests that overlap; it does nothing for requests
 // spaced apart, so a run of commands while the results are still landing
 // becomes a run of crawls. This is deliberately below the 20 second poll used
-// by Ingest and AwaitComplete, so neither is ever throttled by it and neither
-// needs a way around it.
+// by Ingest, so it is never throttled by this and needs no way around it.
 const negativeTTL = 10 * time.Second
 
 // drawSettles is how long before the completion mark the balls are done and
@@ -130,11 +129,11 @@ func (s *Service) Get(ctx context.Context, day time.Time) (domain.Draw, error) {
 	return s.lookup(ctx, day, true)
 }
 
-// poll is Get for the loops that already pace themselves - Ingest and
-// AwaitComplete. They ignore the notes, because throttling a loop that polls
-// every twenty seconds by a note some command left a second ago ties two
-// unrelated rates together. They still leave notes: whether to consult one is
-// the caller's business, whether to record one is not.
+// poll is Get for Ingest, which already paces itself. It ignores the notes,
+// because throttling a loop that polls every twenty seconds by a note some
+// request left a second ago ties two unrelated rates together. It still
+// leaves notes: whether to consult one is the caller's business, whether to
+// record one is not.
 func (s *Service) poll(ctx context.Context, day time.Time) (domain.Draw, error) {
 	return s.lookup(ctx, day, false)
 }
@@ -273,35 +272,6 @@ func (s *Service) crawl(ctx context.Context, day time.Time) (domain.Draw, error)
 			return domain.Draw{}, fmt.Errorf("%s: %w", domain.FormatVN(day), ErrNotYet)
 		}
 		return domain.Draw{}, outcome.Err
-	}
-}
-
-// AwaitComplete polls until the day is complete or ctx ends. The site
-// publishes tiers progressively, so the first scrape after 18:35 is often
-// partial.
-func (s *Service) AwaitComplete(ctx context.Context, day time.Time, interval time.Duration) (domain.Draw, error) {
-	if interval <= 0 {
-		interval = 20 * time.Second
-	}
-	attempt := 0
-	for {
-		attempt++
-		draw, err := s.poll(ctx, day)
-		switch {
-		case err == nil:
-			return draw, nil
-		case errors.Is(err, ErrNoResult), errors.Is(err, domain.ErrOutOfRange):
-			return domain.Draw{}, err // settled; polling cannot help
-		}
-		s.log.Info("result not ready, will retry",
-			"date", domain.FormatISO(day), "attempt", attempt, "reason", err)
-
-		select {
-		case <-ctx.Done():
-			return domain.Draw{}, fmt.Errorf("%s: gave up after %d attempts: %w",
-				domain.FormatVN(day), attempt, err)
-		case <-time.After(interval):
-		}
 	}
 }
 

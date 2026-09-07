@@ -6,12 +6,11 @@ import (
 	"strings"
 
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
-	"github.com/minhhdtr/xsmb-discord-bot/internal/format"
 )
 
-// BarWidth is the widest bar in a grouped frequency, chosen so a whole row
+// barWidth is the widest bar in a grouped frequency, chosen so a whole row
 // fits a phone line without wrapping.
-const BarWidth = 12
+const barWidth = 12
 
 // DigitCounts draws the đầu and đuôi counts of one draw as a small grid.
 //
@@ -28,7 +27,7 @@ func DigitCounts(heads, tails [10]int) string {
 
 func digitRow(label string, counts [10]int) string {
 	var b strings.Builder
-	b.WriteString(PadRunes(label, 5))
+	b.WriteString(padRunes(label, 5))
 	for _, n := range counts {
 		fmt.Fprintf(&b, "%2d ", n)
 	}
@@ -46,37 +45,26 @@ func Buckets(grouped domain.GroupedFrequency) string {
 	for _, bucket := range grouped.Buckets {
 		bar := 0
 		if peak > 0 {
-			bar = bucket.Hits * BarWidth / peak
+			bar = bucket.Hits * barWidth / peak
 		}
 		fmt.Fprintf(&b, "%d │ %5d  %-*s %5s\n",
-			bucket.Digit, bucket.Hits, BarWidth, strings.Repeat("▇", bar),
-			ShareLabel(Share(bucket.Hits, grouped.Even)))
+			bucket.Digit, bucket.Hits, barWidth, strings.Repeat("▇", bar),
+			shareLabel(share(bucket.Hits, grouped.Even)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// BucketNote explains the numbers under the table, including the one thing a
-// reader would otherwise take for an error: under chạm the buckets add up to
-// more than the numbers drawn.
-func BucketNote(grouped domain.GroupedFrequency) string {
-	note := fmt.Sprintf("Chia đều là %s lần mỗi ô.", format.Decimal(grouped.Even, 0))
-	if grouped.By.Overlaps() {
-		note += " Một lô chạm hai chữ số nên được đếm ở cả hai ô, trừ lô kép."
-	}
-	return note
-}
-
-// Share is how far a bucket sits from an even split, in percent.
-func Share(hits int, even float64) float64 {
+// share is how far a bucket sits from an even split, in percent.
+func share(hits int, even float64) float64 {
 	if even == 0 {
 		return 0
 	}
 	return (float64(hits) - even) / even * 100
 }
 
-// ShareLabel shows which side of even a bucket sits on. Half a percent below
+// shareLabel shows which side of even a bucket sits on. Half a percent below
 // even is not "-0%", it is level.
-func ShareLabel(value float64) string {
+func shareLabel(value float64) string {
 	rounded := math.Round(value)
 	if rounded == 0 {
 		return "0%"

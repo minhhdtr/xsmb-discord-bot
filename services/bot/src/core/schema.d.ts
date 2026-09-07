@@ -382,12 +382,12 @@ export interface components {
              * Format: date-time
              * @description When the source says the prices were set.
              */
-            updated_at?: string | null;
+            updated_at: string | null;
             /**
              * Format: date-time
              * @description When core asked. Different from updated_at on a stale board.
              */
-            fetched_at?: string | null;
+            fetched_at: string | null;
             source: string;
         };
         GoldSeries: {
@@ -413,9 +413,9 @@ export interface components {
             /** @description Subscribed channels. */
             channels: number;
             /** Format: date */
-            earliest?: string | null;
+            earliest: string | null;
             /** Format: date */
-            latest?: string | null;
+            latest: string | null;
         };
         Draw: {
             /** Format: date */
@@ -439,11 +439,11 @@ export interface components {
             /** @description The board as aligned monospace text, no fences. */
             table: string;
             /** @description The đầu đuôi table as aligned monospace text. */
-            head_tail?: string;
+            head_tail: string;
             /** @example xoso.com.vn */
             source: string;
             /** Format: date-time */
-            fetched_at?: string | null;
+            fetched_at: string | null;
         };
         DayReport: {
             /** Format: date */
@@ -453,19 +453,19 @@ export interface components {
             cham_duoi: number;
             tong_de: number;
             /** @description Numbers with two identical digits, each listed once. */
-            kep?: string[];
+            kep: string[];
             /** @description Numbers that landed more than once. */
-            nhay?: {
+            nhay: {
                 number: string;
                 hits: number;
             }[];
             /** @description Count per first digit, index 0 to 9. */
             heads: number[];
             tails: number[];
-            mute_heads?: number[];
-            mute_tails?: number[];
-            top_heads?: number[];
-            top_tails?: number[];
+            mute_heads: number[];
+            mute_tails: number[];
+            top_heads: number[];
+            top_tails: number[];
             table: string;
         };
         Gan: {
@@ -475,9 +475,9 @@ export interface components {
             /** @description The current run has passed the old record. */
             new_record: boolean;
             /** Format: date */
-            last_seen?: string | null;
+            last_seen: string | null;
             /** Format: date */
-            record_end?: string | null;
+            record_end: string | null;
         };
         FrequencyList: {
             /** @enum {boolean} */
@@ -516,7 +516,12 @@ export interface components {
                 label: string;
                 /** @description 0 means the whole archive. */
                 days: number;
+                /** @description Appearances, counting a number that landed twice as two. */
                 hits: number;
+                /** @description Draws in the window that held the number at all. */
+                draws: number;
+                /** @description Draws in the window. */
+                total: number;
             }[];
             /** @description Oldest first, one entry per draw in the window. */
             recent: {
@@ -525,9 +530,9 @@ export interface components {
                 hits: number;
             }[];
             /** @description Mean calendar days between appearances. 0 when unknown. */
-            avg_cycle?: number;
+            avg_cycle: number;
             /** Format: date */
-            first?: string | null;
+            first: string | null;
             archive: number;
         };
         SpecialMonth: {

@@ -21,8 +21,17 @@ avoiding that class of problem entirely is worth more than nicer matchers.
 with whatever the test author believed the contract said, which is the one
 thing not worth checking once two languages read the same document.
 
-    cd ../core && go run ./cmd/fakecore :8099     # in another terminal
-    CORE_REQUIRED=1 npm test
+    cd ../core && go run ./cmd/fakecore :8099          # in another terminal
+    cd ../core && go run ./cmd/fakecore :8098 gold     # and a third, for gold
+    CORE_REQUIRED=1 GOLD_CORE_URL=http://127.0.0.1:8098 npm test
+
+Gold is off in the default fakecore on purpose, so the ordinary run exercises
+the `not_configured` path every client has to handle. The second instance with
+`gold` covers the rendering.
+
+The runner takes one file at a time (`--test-concurrency=1`). The files share a
+core, and therefore share its database; one of them clears every subscription,
+which would otherwise wipe rows another file is asserting on.
 
 Without a core those tests are **skipped**, and the runner says so. They are never
 quietly passed: a green suite that checked nothing is worse than no suite, and
