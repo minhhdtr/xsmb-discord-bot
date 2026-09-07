@@ -51,10 +51,16 @@ describe("parseChartArgs", () => {
   // Order-free for the same reason tanso is: a command nobody can remember
   // the order of is a command nobody uses.
   it("reads the code and the window in either order", () => {
-    assert.deepEqual(parseChartArgs(["SJC", "90"]), { code: "SJC", days: 90 });
-    assert.deepEqual(parseChartArgs(["90", "sjc"]), { code: "SJC", days: 90 });
-    assert.deepEqual(parseChartArgs(["pnj"]), { code: "PNJ", days: 30 });
-    assert.deepEqual(parseChartArgs([]), { code: "SJC", days: 30 });
+    assert.deepEqual(parseChartArgs(["VNGSJC", "30"]), { code: "VNGSJC", days: 30 });
+    assert.deepEqual(parseChartArgs(["30", "vngsjc"]), { code: "VNGSJC", days: 30 });
+    assert.deepEqual(parseChartArgs(["dohnl"]), { code: "DOHNL", days: 30 });
+  });
+
+  // The default has to be a code the source actually knows. It was "SJC",
+  // which does not exist, so a bare /bieudo failed for everyone while the
+  // tests passed - the fake core answered for any code at all.
+  it("defaults to a code the source knows", () => {
+    assert.deepEqual(parseChartArgs([]), { code: "SJL1L10", days: 30 });
   });
 });
 
@@ -85,17 +91,68 @@ describe("gold command", () => {
   // returned 30. Refusing is the honest answer: a caller asking for a year and
   // getting a month had no way to tell.
   withGold("refuses a window the source cannot fill", async () => {
-    const { embed } = await goldRouter().goldChart(["SJC", "365"]);
+    const { embed } = await goldRouter().goldChart(["VNGSJC", "365"]);
     assert.equal(embed.title, "Không hợp lệ");
     assert.match(embed.description ?? "", /2 đến 30/);
   });
 
+  // The bare command has to work: it is what most people type.
+  withGold("charts something when no code is given", async () => {
+    const reply = await goldRouter().goldChart([]);
+    assert.equal(reply.files?.length, 1);
+  });
+
+  // An unknown code is the caller's mistake, and used to surface as the same
+  // opaque message as a source that had changed shape.
+  withGold("says so when the code does not exist", async () => {
+    const { embed } = await goldRouter().goldChart(["SJC"]);
+    assert.notEqual(embed.image?.url, "attachment://chart.png");
+  });
+
   withGold("attaches the chart core drew", async () => {
-    const reply = await goldRouter().goldChart(["SJC", "30"]);
+    const reply = await goldRouter().goldChart(["VNGSJC", "30"]);
     assert.equal(reply.files?.length, 1);
     assert.equal(reply.files?.[0]?.name, "chart.png");
     // A real PNG, not an error body rendered as bytes.
     assert.deepEqual([...(reply.files?.[0]?.data.subarray(0, 4) ?? [])], [0x89, 0x50, 0x4e, 0x47]);
     assert.equal(reply.embed.image?.url, "attachment://chart.png");
+  });
+});
+
+describe("autocomplete", () => {
+  // The Go bot offered these and the port dropped them; nothing noticed,
+  // because an interaction the bot ignores looks the same as a slow one.
+  withGold("offers the codes the source is quoting", async () => {
+    const codes = await goldRouter().goldCodes("");
+    assert.ok(codes.length >= 2, `chỉ có ${codes.length} mã`);
+    assert.ok(codes.every((c) => c.value.length > 0 && c.name.length > 0));
+    // Discord refuses more than 25.
+    assert.ok(codes.length <= 25);
+  });
+
+  withGold("filters on what has been typed, by code or by name", async () => {
+    const codes = await goldRouter().goldCodes("doji");
+    assert.ok(codes.length >= 1);
+    assert.ok(
+      codes.every(
+        (c) =>
+          c.value.toLowerCase().includes("doji") ||
+          c.name.toLowerCase().includes("doji"),
+      ),
+    );
+  });
+
+  // An empty dropdown is the worst outcome: the person cannot type past it.
+  // With no core at all there is still something to choose from.
+  it("falls back to a built-in list when core cannot answer", async () => {
+    const { Core } = await import("../src/core/client.js");
+    const { Router } = await import("../src/commands/router.js");
+    const offline = new Router(new Core({ baseUrl: "http://127.0.0.1:1", timeoutMs: 300 }));
+
+    const codes = await offline.goldCodes("");
+    assert.ok(codes.length > 0, "danh sách dự phòng rỗng");
+    // Every fallback code must be one the source would accept — the first
+    // version of this list was four codes that do not exist.
+    assert.ok(codes.some((c) => c.value === "SJL1L10"));
   });
 });

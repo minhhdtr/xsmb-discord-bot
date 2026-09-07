@@ -12,10 +12,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/minhhdtr/xsmb-discord-bot/internal/domain"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/httpapi"
+	"github.com/minhhdtr/xsmb-discord-bot/internal/provider"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/service"
 	"github.com/minhhdtr/xsmb-discord-bot/internal/storage"
 )
@@ -55,17 +57,38 @@ func pow10(n int) int {
 type gold struct{}
 
 func (gold) Board(context.Context) (domain.GoldBoard, error) {
+	// Real codes, so the autocomplete a client builds from this board offers
+	// values the real source would accept.
 	return domain.NewGoldBoard([]domain.GoldQuote{
-		{Code: "SJC", Name: "SJC Hà Nội", Buy: 8_200_000, Sell: 8_400_000,
-			ChangeBuy: 50_000, ChangeSell: 50_000, Currency: domain.VND},
-		{Code: "PNJ", Name: "PNJ", Buy: 8_100_000, Sell: 8_300_000,
+		{Code: "SJL1L10", Name: "Vàng miếng SJC", Buy: 144_000_000, Sell: 147_000_000,
+			ChangeBuy: -600_000, ChangeSell: -600_000, Currency: domain.VND},
+		{Code: "VNGSJC", Name: "VN Gold SJC", Buy: 144_600_000, Sell: 147_600_000,
+			ChangeBuy: 0, ChangeSell: 0, Currency: domain.VND},
+		{Code: "DOHNL", Name: "DOJI Hà Nội", Buy: 143_900_000, Sell: 146_900_000,
 			ChangeBuy: -20_000, ChangeSell: -30_000, Currency: domain.VND},
-		{Code: "XAU", Name: "Vàng thế giới", Buy: 2_412.5,
+		{Code: "XAUUSD", Name: "Vàng thế giới", Buy: 2_412.5,
 			ChangeBuy: 7.6, Currency: domain.USD},
 	}, time.Now(), "fake", time.Now())
 }
 
 func (gold) History(_ context.Context, code string, days int) (domain.GoldSeries, error) {
+	// Only codes the real source knows. A fake that answers for any code is
+	// more permissive than the thing it stands in for, and hides exactly the
+	// bug that shipped: the bot defaulted to "SJC", which does not exist -
+	// every test passed because this obliged.
+	known := false
+	for _, c := range provider.GoldCodes() {
+		if strings.EqualFold(c, code) {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return domain.GoldSeries{}, fmt.Errorf(
+			"fake: no data for code %q; the source has %s",
+			code, strings.Join(provider.GoldCodes(), ", "))
+	}
+
 	points := make([]domain.GoldPoint, 0, days)
 	day := domain.DayOf(time.Now()).AddDate(0, 0, -days)
 	for i := 0; i < days; i++ {

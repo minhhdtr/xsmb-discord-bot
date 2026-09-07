@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -135,6 +136,16 @@ func ParseGoldHistory(body []byte, code, source string) (domain.GoldSeries, erro
 		if series, ok := firstUsable(candidate, code, envelope.Name, envelope.Currency, source); ok {
 			return series, nil
 		}
+	}
+	// Two very different problems used to share this message: the source
+	// changed shape, or the requested code does not exist. Listing what the
+	// payload actually holds separates them at a glance - the second is by far
+	// the more common, and used to send whoever read the log looking at the
+	// parser.
+	if available := codesIn(envelope.History, envelope.Data, envelope.Series, envelope.Prices); len(available) > 0 {
+		return domain.GoldSeries{}, fmt.Errorf(
+			"%s: no data for code %q; the response has %s",
+			source, code, strings.Join(available, ", "))
 	}
 	return domain.GoldSeries{}, fmt.Errorf(
 		"%s: no daily rows found in the response; got %s", source, shapeOf(trimmed))
@@ -351,4 +362,40 @@ func shapeOf(raw string) string {
 	}
 	sortStrings(keys)
 	return "object with keys [" + strings.Join(keys, " ") + "]"
+}
+
+// codesIn lists the gold codes a history payload actually carries, so an
+// unknown code can be reported as such rather than as a parse failure.
+func codesIn(candidates ...json.RawMessage) []string {
+	seen := map[string]bool{}
+	for _, raw := range candidates {
+		if len(raw) == 0 {
+			continue
+		}
+		var days []historyDay
+		if err := json.Unmarshal(raw, &days); err != nil {
+			var byDate map[string]historyDay
+			if err := json.Unmarshal(raw, &byDate); err != nil {
+				continue
+			}
+			for _, day := range byDate {
+				days = append(days, day)
+			}
+		}
+		for _, day := range days {
+			quotes := day.Prices
+			if len(quotes) == 0 {
+				quotes = day.Data
+			}
+			for key := range quotes {
+				seen[key] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for key := range seen {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }

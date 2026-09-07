@@ -68,7 +68,26 @@ export class Router {
       case "huongdan":
       case "help":
         return reply(helpEmbed(this.prefix, this.goldPrefix));
+      // The typed forms of /thongbao and /thongke kho. They existed in the Go
+      // bot and are documented, but were never wired here, so they fell
+      // through to the date parser and answered "không đọc được ngày".
+      // index.ts already gated sub/unsub on Manage Channels - a permission
+      // check on commands that did not run.
+      case "sub":
+        return this.subscribe(request, true);
+      case "unsub":
+        return this.subscribe(request, false);
+      case "status":
+        return this.#archive();
       default:
+        // The statistics also answer at the top level: the Go bot took
+        // `!xsmb logan` and `!xsmb db 08/2026`, and the README still documents
+        // them that way. Requiring `thongke` in the middle was a regression
+        // introduced by the port, invisible because every test spelled the
+        // long form out.
+        if (STATS.has(head.toLowerCase())) {
+          return this.#stats(request.args);
+        }
         return this.#byDate(request.args);
     }
   }
@@ -272,6 +291,41 @@ export class Router {
     }
   }
 
+  /**
+   * Gold codes for the autocomplete on /bieudo.
+   *
+   * Taken from the board core already has cached, so the list is whatever the
+   * source is actually quoting rather than a copy that goes out of date. When
+   * core cannot answer - the feature is off, the source is down - a short
+   * built-in list still lets someone type the common ones instead of being
+   * left with an empty dropdown.
+   */
+  async goldCodes(prefix: string): Promise<{ name: string; value: string }[]> {
+    let codes: { name: string; value: string }[];
+    try {
+      const board = await this.core.goldBoard();
+      codes = board.quotes.map((q) => ({ name: q.name, value: q.code }));
+    } catch (error) {
+      this.log("autocomplete fell back to the built-in list", error);
+      codes = FALLBACK_GOLD_CODES.map((code) => ({ name: code, value: code }));
+    }
+
+    const wanted = prefix.trim().toLowerCase();
+    const matches = wanted
+      ? codes.filter(
+          (c) =>
+            c.value.toLowerCase().includes(wanted) ||
+            c.name.toLowerCase().includes(wanted),
+        )
+      : codes;
+    // Discord refuses more than 25.
+    return matches.slice(0, 25);
+  }
+
+  private log(message: string, error: unknown): void {
+    console.warn(message, error);
+  }
+
   async help(): Promise<Reply> {
     return reply(helpEmbed(this.prefix, this.goldPrefix));
   }
@@ -375,9 +429,56 @@ export class Router {
     if (error.code === "bad_request") {
       return notice("Không hợp lệ", error.message);
     }
-    return notice("Lỗi", "Không lấy được dữ liệu. Thử lại sau nhé.", true);
+    if (error.code === "upstream") {
+      // Naming the source matters. "Không lấy được dữ liệu" is true of every
+      // failure and therefore tells nobody anything - not the person reading
+      // it, and not whoever they report it to.
+      return notice(
+        "Nguồn không trả lời",
+        "Trang nguồn đang lỗi hoặc chậm. Thử lại sau vài phút nhé.",
+        true,
+      );
+    }
+    if (error.status === 0) {
+      return notice(
+        "Không gọi được core",
+        "Bot không kết nối được tới core. Kiểm tra `docker compose ps`.",
+        true,
+      );
+    }
+    return notice(
+      "Lỗi",
+      `Có gì đó không ổn (${error.code}). Chi tiết nằm trong log của core.`,
+      true,
+    );
   }
 }
+
+/**
+ * Enough to type with when core cannot say what the source is quoting.
+ *
+ * Real codes from the source, checked against a live response. An earlier
+ * version of this list held SJC, PNJ, DOJI and XAU — none of which exist. They
+ * were the obvious guesses, and being obvious is what made them wrong: the
+ * source uses its own identifiers, and nobody had looked.
+ */
+const FALLBACK_GOLD_CODES = ["SJL1L10", "VNGSJC", "DOHNL", "PQHNVM", "XAUUSD"];
+
+/**
+ * What `/bieudo` charts when nothing is given: vàng miếng SJC, the one most
+ * people mean.
+ *
+ * Not "SJC" — that is not a code the source knows, and defaulting to it made
+ * the bare command fail while every test passed, because the fake core
+ * answered for any code at all.
+ */
+const DEFAULT_GOLD_CODE = "SJL1L10";
+
+/** Statistics that answer with or without `thongke` in front of them. */
+const STATS = new Set([
+  "db", "ngay", "ngày", "logan", "degan",
+  "tanso", "tầnsố", "lo", "lô", "kho",
+]);
 
 const GROUPINGS: Record<string, Grouping> = {
   dau: "dau",
@@ -398,7 +499,7 @@ export function parseGrouping(input: string): Grouping | null {
  * tanso is: a command nobody can remember the order of is a command nobody
  * uses. */
 export function parseChartArgs(args: string[]): { code: string; days: number } {
-  let code = "SJC";
+  let code = DEFAULT_GOLD_CODE;
   let days = 30;
   for (const arg of args) {
     const asNumber = Number(arg);

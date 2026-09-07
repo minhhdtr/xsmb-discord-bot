@@ -177,14 +177,15 @@ export function helpEmbed(prefix: string, goldPrefix: string): APIEmbed {
         name: "Giá vàng",
         value: lines([
           "`/gold` — bảng giá hiện tại",
-          "`/bieudo ma:SJC ngay:90` — biểu đồ lịch sử giá",
+          "`/bieudo` — biểu đồ lịch sử giá; ô `ma` có gợi ý mã",
         ]),
       },
       {
         name: "Dạng gõ tay",
         value: lines([
-          `\`${prefix}\`, \`${prefix} 03/09/2026\`, \`${prefix} thongke logan\``,
-          `\`${goldPrefix}\`, \`${goldPrefix} chart SJC 90\``,
+          `\`${prefix}\`, \`${prefix} 03/09/2026\`, \`${prefix} logan\`, \`${prefix} db 08/2026\``,
+          `\`${prefix} sub\` / \`${prefix} unsub\`, \`${prefix} status\`, \`${prefix} lo 88\``,
+          `\`${goldPrefix}\`, \`${goldPrefix} chart\`, \`${goldPrefix} chart VNGSJC 30\``,
         ]),
       },
     ],

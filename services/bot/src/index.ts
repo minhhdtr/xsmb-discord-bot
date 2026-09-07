@@ -60,6 +60,20 @@ client.once(Events.ClientReady, async (ready) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    // Discord gives three seconds and accepts no second attempt, so a failure
+    // here means an empty dropdown rather than an error message. Answering
+    // with something is always better than answering with nothing.
+    try {
+      const focused = interaction.options.getFocused(true);
+      const choices =
+        focused.name === "ma" ? await router.goldCodes(focused.value) : [];
+      await interaction.respond(choices);
+    } catch (error) {
+      console.warn("autocomplete failed:", error);
+    }
+    return;
+  }
   if (!interaction.isChatInputCommand()) return;
   try {
     await handleInteraction(interaction);
@@ -281,8 +295,14 @@ async function routePrefix(request: Request, gold: boolean): Promise<Reply> {
   if (!gold) return router.handle(request);
 
   const [head = "", ...rest] = request.args;
-  if (head.toLowerCase() === "chart" || head.toLowerCase() === "bieudo") {
-    return router.goldChart(rest);
+  switch (head.toLowerCase()) {
+    case "chart":
+    case "bieudo":
+      return router.goldChart(rest);
+    case "help":
+    case "huongdan":
+      return router.help();
+    default:
+      return router.gold();
   }
-  return router.gold();
 }

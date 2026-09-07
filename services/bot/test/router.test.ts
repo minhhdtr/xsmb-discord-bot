@@ -123,3 +123,52 @@ describe("subscriptions", () => {
     assert.equal((await r.subscribe(req([], channel), false)).embed.title, "Vốn đã tắt");
   });
 });
+
+/**
+ * Every typed command the README lists, checked against the router.
+ *
+ * These are here because four of them were not wired at all — `sub`, `unsub`,
+ * `status` and `!gold help` fell through to the date parser and answered
+ * "không đọc được ngày". Nothing caught it: the slash forms worked, the tests
+ * covered the slash forms, and the README kept advertising the typed ones.
+ *
+ * Rewriting the README is what surfaced it, which is the argument for treating
+ * documentation as something to verify rather than something to write.
+ */
+describe("every documented typed command reaches a handler", () => {
+  const notAMisreadDate = (embed: { title?: string }) =>
+    embed.title !== "Không đọc được ngày";
+
+  withCore("xsmb subcommands", async () => {
+    const r = router();
+    const channel = `typed-${Date.now()}`;
+
+    // Both grammars. The short form is what the README documents and what the
+    // Go bot took; the long form is what the port accidentally required.
+    for (const args of [
+      ["status"],
+      ["logan"],
+      ["degan"],
+      ["help"],
+      ["kho"],
+      ["tanso", "cham"],
+      ["lo", "27"],
+      ["db", "08/2026"],
+      ["ngay", "20/08/2026"],
+      ["thongke", "kho"],
+      ["thongke", "logan"],
+    ]) {
+      const { embed } = await r.handle(req(args, channel));
+      assert.ok(notAMisreadDate(embed), `!xsmb ${args.join(" ")} → ${embed.title}`);
+    }
+  });
+
+  withCore("sub and unsub change the subscription", async () => {
+    const r = router();
+    const channel = `typed-sub-${Date.now()}`;
+
+    assert.equal((await r.handle(req(["sub"], channel))).embed.title, "Đã bật thông báo");
+    assert.equal((await r.handle(req(["sub"], channel))).embed.title, "Vốn đã bật");
+    assert.equal((await r.handle(req(["unsub"], channel))).embed.title, "Đã tắt thông báo");
+  });
+});

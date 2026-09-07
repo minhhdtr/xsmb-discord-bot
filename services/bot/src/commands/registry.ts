@@ -139,7 +139,10 @@ export function slashCommands(at?: DateTime<true>): ApplicationCommandDataResolv
         {
           type: ApplicationCommandOptionType.String,
           name: "ma",
-          description: "Mã vàng, ví dụ SJC. Bỏ trống thì lấy SJC.",
+          description: "Mã vàng. Bỏ trống thì lấy vàng miếng SJC. Gõ để xem gợi ý.",
+          // The codes come from whoever the source is quoting today, so they
+          // are offered rather than listed as fixed choices.
+          autocomplete: true,
         },
         {
           type: ApplicationCommandOptionType.Integer,

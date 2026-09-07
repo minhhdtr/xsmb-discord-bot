@@ -21,9 +21,21 @@ services:
   core:
     build: ./services/core
     env_file: .env
-    # No ports: mapping, and it must stay that way. The core API has no auth,
-    # and five of its endpoints write: publishing this port would let anyone
-    # who can reach the host silence the daily announcement.
+    # READ THIS BEFORE UNCOMMENTING THE ports: BLOCK BELOW.
+    #
+    # This API has no authentication. That is safe today only because Docker
+    # isolates bridge networks from each other, so nothing outside this compose
+    # project can reach it - the only containers that can are db and bot.
+    #
+    # Publishing a port breaks exactly that assumption. Every process on the
+    # host could then reach five endpoints that write: silence the daily
+    # announcement, burn an announcement claim, unsubscribe a channel.
+    #
+    # If you need the port - to run analysis from the host, say - add
+    # authentication at the same time. Not afterwards.
+    #
+    # ports:
+    #   - "127.0.0.1:8080:8080"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
     depends_on:
