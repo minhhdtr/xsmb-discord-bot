@@ -333,16 +333,30 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Record that the message went out
+         * @description Ends the lease. A claim is honoured for ten minutes, after which an
+         *     unsent one may be taken over — that is what stops a process dying
+         *     between claiming and sending from losing the day for good. Marking it
+         *     sent makes the claim permanent.
+         */
+        put: operations["markAnnounced"];
         /**
          * Claim the right to announce a day to a channel
-         * @description Succeeds exactly once per day and channel, across restarts and across
-         *     instances. A client claims before it posts; if the post fails it
-         *     releases the claim so the next run tries again.
+         * @description Succeeds once per day and channel, across restarts and instances. A
+         *     client claims, posts, then marks it sent with PUT; if the post fails it
+         *     releases the claim with DELETE so the next run tries again.
          *
-         *     This is what stops a restart at 18:50 from posting the same result a
-         *     second time. It has to be settled in the database rather than in the
-         *     client, because a client that has just restarted remembers nothing.
+         *     The claim is a **lease**, not a permanent mark. If a client dies between
+         *     claiming and sending, the row is left behind unsent, and after ten
+         *     minutes another attempt may take it over. Without that, one badly timed
+         *     crash lost the day for good.
+         *
+         *     Exactly-once is not on offer: Discord has no idempotency key, so a send
+         *     whose response is lost cannot be told from one that never arrived. The
+         *     choice is which way to be wrong, and this errs toward silence — a bot
+         *     posting the same result twice is more visible than one missing a day,
+         *     and the result is still one command away.
          */
         post: operations["claimAnnouncement"];
         /** Give a claim back after a failed send */
@@ -1001,6 +1015,34 @@ export interface operations {
                         removed: boolean;
                     };
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    markAnnounced: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example 2026-09-04 */
+                date: components["parameters"]["DatePath"];
+                /**
+                 * @description Opaque to core, which never interprets it. Today it is a Discord
+                 *     channel; a second client would add a platform alongside it rather than
+                 *     overload this.
+                 */
+                channel_id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

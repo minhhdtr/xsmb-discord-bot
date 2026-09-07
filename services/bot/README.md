@@ -39,6 +39,16 @@ the first version of this file got that wrong.
 
 `CORE_REQUIRED=1` turns an unreachable core into a hard failure. CI sets it.
 
+## Keeping the generated client honest
+
+`npm run check:api` regenerates the schema and fails if the result differs from
+what is committed. CI runs it.
+
+Deliberately a check rather than a `prebuild` hook. A hook would quietly
+rewrite a committed file during every build, leaving a dirty working tree
+nobody asked for and no signal that the contract had moved. Failing loudly is
+the point.
+
 ## Regenerating the client
 
 `src/core/schema.d.ts` is generated. Do not edit it, and do not hand-write the

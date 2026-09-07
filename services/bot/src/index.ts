@@ -3,6 +3,7 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  PermissionFlagsBits,
   type ChatInputCommandInteraction,
   type Message,
 } from "discord.js";
@@ -10,6 +11,7 @@ import {
 import { Core } from "./core/client.js";
 import { Router, type Request } from "./commands/router.js";
 import { Announcer } from "./commands/announce.js";
+import { fromInteraction } from "./commands/interaction.js";
 import { slashCommands } from "./commands/registry.js";
 import type { APIEmbed } from "discord.js";
 import type { Reply } from "./render/embeds.js";
@@ -59,7 +61,16 @@ client.once(Events.ClientReady, async (ready) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-  await handleInteraction(interaction);
+  try {
+    await handleInteraction(interaction);
+  } catch (error) {
+    // Anything that escapes handleInteraction would otherwise be an unhandled
+    // rejection and, to the person who ran the command, silence: Discord shows
+    // "The application did not respond" and nothing explains why. Saying so is
+    // worse than a good answer and far better than nothing.
+    console.error(`/${interaction.commandName} failed:`, error);
+    await say(interaction, "Lệnh này lỗi rồi. Mình đã ghi log, thử lại sau nhé.");
+  }
 });
 
 if (prefixCommands) {
@@ -68,16 +79,18 @@ if (prefixCommands) {
     // The gold prefix is checked first: if one prefix is a prefix of the
     // other, whichever is tested first wins, and that should be a decision
     // rather than an accident of ordering.
-    if (message.content.startsWith(goldPrefix)) {
+    // A boundary is required, or `!xsmbfoo` counts as `!xsmb` and the bot
+    // answers a message that was never addressed to it.
+    if (addressedTo(message.content, goldPrefix)) {
       await handleMessage(message, goldPrefix, true);
-    } else if (message.content.startsWith(prefix)) {
+    } else if (addressedTo(message.content, prefix)) {
       await handleMessage(message, prefix, false);
     }
   });
 }
 
 async function handleInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
-  const { args, ephemeral } = fromInteraction(interaction);
+  const { args, ephemeral } = fromInteraction(interaction.commandName, interaction.options);
   const request: Request = {
     args,
     channelId: interaction.channelId,
@@ -87,6 +100,11 @@ async function handleInteraction(interaction: ChatInputCommandInteraction): Prom
   // Deferred first. A command that has to crawl a missing day takes longer
   // than the three seconds Discord allows for a first response.
   await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+
+  if (interaction.commandName === "thongbao" && !mayManageChannel(interaction)) {
+    await say(interaction, refusal);
+    return;
+  }
 
   const reply = await route(request, interaction.commandName, interaction.options.getString("trangthai"));
   await interaction.editReply({
@@ -115,6 +133,11 @@ async function handleMessage(message: Message, used: string, gold: boolean): Pro
 
   // A group DM has no send(); nothing else the bot can reach lacks it.
   if (!message.channel.isSendable()) return;
+
+  if (!gold && isSubscriptionCommand(args) && !mayManageChannel(message)) {
+    await message.reply(refusal);
+    return;
+  }
 
   const reply = await routePrefix(request, gold);
   const sent = await message.channel.send({
@@ -173,47 +196,50 @@ async function playFrames(
   }
 }
 
-/** Flattens slash options into the same word list a prefix command produces,
- * so there is one handler per command rather than two. */
-function fromInteraction(interaction: ChatInputCommandInteraction): {
-  args: string[];
-  ephemeral: boolean;
-} {
-  const name = interaction.commandName;
+const refusal =
+  "Lệnh này cần quyền **Quản lý kênh** — thông báo hằng ngày là cài đặt của cả kênh, không phải của riêng ai.";
 
-  if (name === "xsmb") {
-    const day = interaction.options.getString("ngay");
-    return { args: day ? day.split(/\s+/) : [], ephemeral: false };
-  }
-  if (name === "quaythu") {
-    return { args: ["quaythu"], ephemeral: false };
-  }
-  if (name === "thongbao") {
-    return { args: [], ephemeral: true };
-  }
-  if (name === "gold" || name === "huongdan") {
-    return { args: [], ephemeral: name === "huongdan" };
-  }
-  if (name === "bieudo") {
-    const args: string[] = [];
-    const code = interaction.options.getString("ma");
-    if (code) args.push(code);
-    const days = interaction.options.getInteger("ngay");
-    if (days !== null) args.push(String(days));
-    return { args, ephemeral: false };
-  }
-  if (name === "thongke") {
-    const sub = interaction.options.getSubcommand();
-    const args = ["thongke", sub];
-    for (const option of ["ngay", "thang", "kieu"]) {
-      const value = interaction.options.getString(option);
-      if (value) args.push(...value.split(/\s+/));
+/** Whether the caller may change this channel's subscription.
+ *
+ * Checked at runtime as well as declared on the command, because
+ * defaultMemberPermissions can be overridden per guild and does not apply to
+ * the typed form at all. A DM has no channel to manage, so it fails here too.
+ */
+function mayManageChannel(source: ChatInputCommandInteraction | Message): boolean {
+  if (!source.inGuild()) return false;
+  // An interaction carries the resolved permissions; a message carries the
+  // member, whose permissions are resolved against the channel it arrived in.
+  const permissions =
+    "memberPermissions" in source ? source.memberPermissions : source.member?.permissions;
+  return permissions?.has(PermissionFlagsBits.ManageChannels) ?? false;
+}
+
+/** The typed forms that change a subscription. */
+function isSubscriptionCommand(args: string[]): boolean {
+  const head = (args[0] ?? "").toLowerCase();
+  return head === "sub" || head === "unsub" || head === "thongbao";
+}
+
+/** True when the message is this command and not merely starts with its
+ * letters. */
+function addressedTo(content: string, prefix: string): boolean {
+  const text = content.trimEnd();
+  return text === prefix || content.startsWith(prefix + " ") || content.startsWith(prefix + "\n");
+}
+
+/** Replies however the interaction still allows: a fresh reply if nothing has
+ * been sent, an edit if it was already deferred. */
+async function say(interaction: ChatInputCommandInteraction, text: string): Promise<void> {
+  const body = { content: text, embeds: [] };
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(body);
+    } else {
+      await interaction.reply({ ...body, flags: MessageFlags.Ephemeral });
     }
-    const days = interaction.options.getInteger("ngay");
-    if (days !== null) args.push(String(days));
-    return { args, ephemeral: false };
+  } catch (error) {
+    console.error("cannot even report the failure:", error);
   }
-  return { args: [name], ephemeral: false };
 }
 
 function sleep(ms: number): Promise<void> {

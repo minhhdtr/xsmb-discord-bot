@@ -216,6 +216,15 @@ export class Core {
     }
   }
 
+  /** Ends the lease. Until this is called the claim expires on its own, which
+   * is what lets a crash between claiming and sending be recovered from. */
+  async markAnnounced(date: string, channelId: string): Promise<void> {
+    await this.#request(
+      `/v1/announcements/${encodeURIComponent(date)}/${encodeURIComponent(channelId)}`,
+      { method: "PUT" },
+    );
+  }
+
   async releaseAnnouncement(date: string, channelId: string): Promise<void> {
     await this.#request(
       `/v1/announcements/${encodeURIComponent(date)}/${encodeURIComponent(channelId)}`,

@@ -88,28 +88,56 @@ func (g *Gold) Board(ctx context.Context) (domain.GoldBoard, error) {
 	return board, nil
 }
 
-// History is cached much longer than the live board - a closed day can't
+// History is cached much longer than the live board - a closed day cannot
 // change.
+//
+// Two things this deliberately does not do. It does not hold the lock across
+// the upstream call: the source taking ten seconds used to block every other
+// chart request behind it, for a fetch none of them needed. And it does not
+// serve a stale series forever - a source that has been down for three days is
+// broken, and answering with three-day-old prices as though they were current
+// hides that from everyone.
 func (g *Gold) History(ctx context.Context, code string, days int) (domain.GoldSeries, error) {
-	const historyTTL = 30 * time.Minute
 	key := fmt.Sprintf("%s|%d", strings.ToUpper(code), days)
 
-	g.histMu.Lock()
-	defer g.histMu.Unlock()
-
-	if entry, ok := g.hist[key]; ok && g.now().Sub(entry.loaded) <= historyTTL {
+	if entry, ok := g.readHistory(key); ok && g.now().Sub(entry.loaded) <= historyTTL {
 		return entry.series, nil
 	}
+
+	// Outside the lock. Two requests for the same key may both fetch; that
+	// costs one extra request and is far cheaper than serialising every
+	// caller behind the slowest one.
 	series, err := g.src.History(ctx, code, days)
 	if err != nil {
-		if entry, ok := g.hist[key]; ok {
-			g.log.Warn("serving a stale gold history", "code", code, "error", err)
+		entry, ok := g.readHistory(key)
+		if ok && g.now().Sub(entry.loaded) <= historyTTL+historyGrace {
+			g.log.Warn("serving a stale gold history", "code", code,
+				"age", g.now().Sub(entry.loaded), "error", err)
 			return entry.series, nil
 		}
 		return domain.GoldSeries{}, err
 	}
+
+	g.histMu.Lock()
 	g.hist[key] = cachedSeries{series: series, loaded: g.now()}
+	g.histMu.Unlock()
 	return series, nil
+}
+
+const (
+	// historyTTL is how long a series is served without asking again.
+	historyTTL = 30 * time.Minute
+	// historyGrace is how much longer it may be served after the source starts
+	// failing. Past this the request fails, because a chart that is a day out
+	// of date and says nothing about it is worse than an error.
+	historyGrace = 6 * time.Hour
+)
+
+func (g *Gold) readHistory(key string) (cachedSeries, bool) {
+	g.histMu.Lock()
+	defer g.histMu.Unlock()
+	entry, ok := g.hist[key]
+	return entry, ok
 }
 
 // cached returns the held board if it is younger than window.

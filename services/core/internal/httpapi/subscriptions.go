@@ -105,6 +105,20 @@ func (s *Server) claimAnnouncement(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+// markAnnounced ends the lease: the message went out, so no later attempt may
+// take this claim over.
+func (s *Server) markAnnounced(w http.ResponseWriter, r *http.Request) {
+	day, channelID, ok := s.announcementKey(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.MarkAnnounced(r.Context(), day, channelID); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) releaseAnnouncement(w http.ResponseWriter, r *http.Request) {
 	day, channelID, ok := s.announcementKey(w, r)
 	if !ok {

@@ -81,8 +81,17 @@ describe("gold command", () => {
     assert.match(embed.fields?.[0]?.value ?? "", /Mua \*\*/);
   });
 
+  // The contract used to advertise 3650 days while the provider quietly
+  // returned 30. Refusing is the honest answer: a caller asking for a year and
+  // getting a month had no way to tell.
+  withGold("refuses a window the source cannot fill", async () => {
+    const { embed } = await goldRouter().goldChart(["SJC", "365"]);
+    assert.equal(embed.title, "Không hợp lệ");
+    assert.match(embed.description ?? "", /2 đến 30/);
+  });
+
   withGold("attaches the chart core drew", async () => {
-    const reply = await goldRouter().goldChart(["SJC", "60"]);
+    const reply = await goldRouter().goldChart(["SJC", "30"]);
     assert.equal(reply.files?.length, 1);
     assert.equal(reply.files?.[0]?.name, "chart.png");
     // A real PNG, not an error body rendered as bytes.

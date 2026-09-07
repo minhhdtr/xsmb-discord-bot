@@ -4,7 +4,8 @@ import { DateTime } from "luxon";
 import type { APIEmbed } from "discord.js";
 
 import { Core } from "../src/core/client.js";
-import { Announcer, msUntilNextRun } from "../src/commands/announce.js";
+import { Announcer, msUntilNextRun, worthRetrying } from "../src/commands/announce.js";
+import { CoreError } from "../src/core/client.js";
 
 const baseUrl = process.env.CORE_URL ?? "http://127.0.0.1:8099";
 const required = process.env.CORE_REQUIRED === "1";
@@ -116,5 +117,55 @@ describe("announcing", () => {
     const { posts, post } = collect();
     await new Announcer(core, post, { gapMs: 0 }).runFor("2026-08-17");
     assert.equal(posts.length, 0);
+  });
+});
+
+
+describe("worthRetrying", () => {
+  // The bug this exists for: any error that was not `not_yet` ended the
+  // attempt, so core restarting at 18:35 lost the whole day.
+  it("waits through anything temporary", () => {
+    assert.equal(worthRetrying(new CoreError("not_yet", 404, "chưa có")), true);
+    assert.equal(worthRetrying(new CoreError("internal", 500, "lỗi")), true);
+    assert.equal(worthRetrying(new CoreError("upstream", 502, "nguồn")), true);
+    // status 0 is fetch failing outright: DNS, refused, socket dropped.
+    assert.equal(worthRetrying(new CoreError("unknown", 0, "unreachable")), true);
+    assert.equal(worthRetrying(new TypeError("fetch failed")), true);
+  });
+
+  it("stops on anything that asking again cannot fix", () => {
+    assert.equal(worthRetrying(new CoreError("no_draw", 404, "không quay")), false);
+    assert.equal(worthRetrying(new CoreError("out_of_range", 400, "ngoài kho")), false);
+    assert.equal(worthRetrying(new CoreError("bad_request", 400, "sai")), false);
+  });
+});
+
+describe("the claim is a lease", () => {
+  const collect = () => {
+    const posts: { channelId: string; embed: APIEmbed }[] = [];
+    return {
+      posts,
+      post: async (channelId: string, embed: APIEmbed) => {
+        posts.push({ channelId, embed });
+      },
+    };
+  };
+
+  // A claim left unsent must not silence the channel for good. This checks the
+  // half the bot controls: a successful post is recorded as sent, so nothing
+  // later reclaims it.
+  withCore("marks a sent announcement so it is never reclaimed", async () => {
+    const core = new Core({ baseUrl, timeoutMs: 5_000 });
+    const channel = `lease-${Date.now()}`;
+    await core.subscribe(channel, "g1");
+
+    const { posts, post } = collect();
+    await new Announcer(core, post, { gapMs: 0 }).runFor("2026-08-20");
+    assert.equal(posts.filter((p) => p.channelId === channel).length, 1);
+
+    // Sent, so claiming again fails however long anyone waits.
+    assert.equal(await core.claimAnnouncement("2026-08-20", channel), false);
+
+    await core.unsubscribe(channel);
   });
 });

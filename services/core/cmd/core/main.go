@@ -67,11 +67,19 @@ func run() error {
 	defer store.Close()
 	log.Info("database ready")
 
-	goldOpts := []provider.GoldOption{provider.WithGoldLogger(log)}
+	// An empty GOLD_URL disables the feature, which is what .env.example has
+	// always said. It used to build the provider anyway with a default URL, so
+	// clearing the variable did nothing and the docs were simply wrong. A nil
+	// service here is what makes the API answer not_configured, and the bot
+	// say "chưa bật" instead of "lỗi".
+	var gold httpapi.Gold
 	if cfg.GoldURL != "" {
-		goldOpts = append(goldOpts, provider.WithGoldURL(cfg.GoldURL))
+		gold = service.NewGold(
+			provider.NewVangToday(provider.WithGoldLogger(log), provider.WithGoldURL(cfg.GoldURL)),
+			cfg.GoldTTL, cfg.GoldGrace, nil, log)
+	} else {
+		log.Info("gold disabled", "reason", "GOLD_URL is empty")
 	}
-	gold := service.NewGold(provider.NewVangToday(goldOpts...), cfg.GoldTTL, cfg.GoldGrace, nil, log)
 
 	// Ingest keeps the archive level with the source on its own schedule. It
 	// does not care whether any client is connected, or whether anyone is

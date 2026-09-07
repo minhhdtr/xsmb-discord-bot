@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-xsmb}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xsmb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-xsmb}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -25,7 +25,7 @@ services:
     # and five of its endpoints write: publishing this port would let anyone
     # who can reach the host silence the daily announcement.
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:-xsmb}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy
@@ -47,7 +47,7 @@ services:
     profiles: ["tools"]
     env_file: .env
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:-xsmb}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-xsmb}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-xsmb}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy

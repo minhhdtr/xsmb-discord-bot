@@ -285,7 +285,10 @@ paths:
           schema: { type: string }
         - name: days
           in: query
-          schema: { type: integer, minimum: 2, maximum: 3650, default: 30 }
+          # The upstream source keeps thirty days. Advertising more and
+          # silently clamping is worse than refusing: a caller asking for a
+          # year would have got a month back and no way to tell.
+          schema: { type: integer, minimum: 2, maximum: 30, default: 30 }
       responses:
         "200":
           description: A series, oldest point first
@@ -315,7 +318,10 @@ paths:
           schema: { type: string }
         - name: days
           in: query
-          schema: { type: integer, minimum: 2, maximum: 3650, default: 30 }
+          # The upstream source keeps thirty days. Advertising more and
+          # silently clamping is worse than refusing: a caller asking for a
+          # year would have got a month back and no way to tell.
+          schema: { type: integer, minimum: 2, maximum: 30, default: 30 }
       responses:
         "200":
           description: A chart
@@ -398,13 +404,20 @@ paths:
       tags: [subscriptions]
       summary: Claim the right to announce a day to a channel
       description: |
-        Succeeds exactly once per day and channel, across restarts and across
-        instances. A client claims before it posts; if the post fails it
-        releases the claim so the next run tries again.
+        Succeeds once per day and channel, across restarts and instances. A
+        client claims, posts, then marks it sent with PUT; if the post fails it
+        releases the claim with DELETE so the next run tries again.
 
-        This is what stops a restart at 18:50 from posting the same result a
-        second time. It has to be settled in the database rather than in the
-        client, because a client that has just restarted remembers nothing.
+        The claim is a **lease**, not a permanent mark. If a client dies between
+        claiming and sending, the row is left behind unsent, and after ten
+        minutes another attempt may take it over. Without that, one badly timed
+        crash lost the day for good.
+
+        Exactly-once is not on offer: Discord has no idempotency key, so a send
+        whose response is lost cannot be told from one that never arrived. The
+        choice is which way to be wrong, and this errs toward silence — a bot
+        posting the same result twice is more visible than one missing a day,
+        and the result is still one command away.
       operationId: claimAnnouncement
       parameters:
         - { $ref: "#/components/parameters/DatePath" }
@@ -417,6 +430,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [subscriptions]
+      summary: Record that the message went out
+      description: |
+        Ends the lease. A claim is honoured for ten minutes, after which an
+        unsent one may be taken over — that is what stops a process dying
+        between claiming and sending from losing the day for good. Marking it
+        sent makes the claim permanent.
+      operationId: markAnnounced
+      parameters:
+        - { $ref: "#/components/parameters/DatePath" }
+        - { $ref: "#/components/parameters/ChannelID" }
+      responses:
+        "204":
+          description: Recorded
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [subscriptions]

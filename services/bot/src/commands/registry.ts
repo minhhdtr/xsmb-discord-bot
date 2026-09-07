@@ -1,5 +1,6 @@
 import {
   ApplicationCommandOptionType,
+  PermissionFlagsBits,
   type ApplicationCommandDataResolvable,
 } from "discord.js";
 import { DateTime } from "luxon";
@@ -143,9 +144,11 @@ export function slashCommands(at?: DateTime<true>): ApplicationCommandDataResolv
         {
           type: ApplicationCommandOptionType.Integer,
           name: "ngay",
-          description: "Số ngày lịch sử, mặc định 30",
+          description: "Số ngày lịch sử, tối đa 30",
           minValue: 2,
-          maxValue: 3650,
+          // The upstream source keeps thirty days. Declaring the real limit
+          // lets Discord refuse a larger number before it ever reaches core.
+          maxValue: 30,
         },
       ],
     },
@@ -156,6 +159,14 @@ export function slashCommands(at?: DateTime<true>): ApplicationCommandDataResolv
     {
       name: "thongbao",
       description: "Bật hoặc tắt thông báo kết quả hằng ngày cho kênh này",
+      // Discord hides the command from anyone without the permission, which is
+      // better than letting them run it and be refused. It is not enough on
+      // its own: a guild admin can override this per-guild, and the typed form
+      // never sees it at all, so the handler checks again.
+      defaultMemberPermissions: PermissionFlagsBits.ManageChannels,
+      // A subscription is a property of a channel; there is nothing to
+      // subscribe in a DM.
+      dmPermission: false,
       options: [
         {
           type: ApplicationCommandOptionType.String,

@@ -38,6 +38,7 @@ type Store interface {
 	// True exactly once per pair, across restarts and instances.
 	ClaimAnnouncement(ctx context.Context, day time.Time, channelID string) (bool, error)
 	// ReleaseAnnouncement undoes a claim after a failed send.
+	MarkAnnounced(ctx context.Context, day time.Time, channelID string) error
 	ReleaseAnnouncement(ctx context.Context, day time.Time, channelID string) error
 
 	Stats(ctx context.Context) (Stats, error)

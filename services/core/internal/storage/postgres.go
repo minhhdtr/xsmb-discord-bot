@@ -224,17 +224,45 @@ func (p *Postgres) Subscriptions(ctx context.Context) ([]Subscription, error) {
 	return out, rows.Err()
 }
 
-// ClaimAnnouncement wins the race to post a given day to a given channel.
+// announcementLease is how long a claim is honoured before another attempt may
+// take it over.
+//
+// It only matters when a process dies between claiming and sending. Long
+// enough that a slow send is never interrupted; short enough that the next
+// run, twenty-four hours later, always reclaims.
+const announcementLease = 10 * time.Minute
+
+// ClaimAnnouncement wins the right to post a given day to a given channel.
+//
+// The claim is a lease, not a permanent mark. A row that was claimed but never
+// marked sent - the process died in between - becomes claimable again once the
+// lease expires. Without that, a crash in the second between claiming and
+// sending lost the day for good.
 func (p *Postgres) ClaimAnnouncement(ctx context.Context, day time.Time, channelID string) (bool, error) {
 	result, err := p.db.ExecContext(ctx,
 		`INSERT INTO announcements (draw_date, channel_id) VALUES ($1, $2)
-		 ON CONFLICT (draw_date, channel_id) DO NOTHING`,
-		domain.FormatISO(day), channelID)
+		 ON CONFLICT (draw_date, channel_id) DO UPDATE
+		    SET posted_at = now()
+		  WHERE announcements.sent_at IS NULL
+		    AND announcements.posted_at < now() - $3::interval`,
+		domain.FormatISO(day), channelID, announcementLease.String())
 	if err != nil {
 		return false, fmt.Errorf("claim announcement: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	return affected > 0, err
+}
+
+// MarkAnnounced records that the message went out, which ends the lease. A
+// sent row is never reclaimed, whatever happens next.
+func (p *Postgres) MarkAnnounced(ctx context.Context, day time.Time, channelID string) error {
+	if _, err := p.db.ExecContext(ctx,
+		`UPDATE announcements SET sent_at = now()
+		  WHERE draw_date = $1 AND channel_id = $2`,
+		domain.FormatISO(day), channelID); err != nil {
+		return fmt.Errorf("mark announced: %w", err)
+	}
+	return nil
 }
 
 // ReleaseAnnouncement undoes a claim after a failed send.

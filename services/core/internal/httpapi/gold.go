@@ -79,7 +79,7 @@ func (s *Server) goldHistory(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, codeNotConfigured, "giá vàng chưa được bật")
 		return
 	}
-	days, ok := s.intParam(w, r, "days", 30, 2, 3650)
+	days, ok := s.intParam(w, r, "days", domain.MaxHistoryDays, 2, domain.MaxHistoryDays)
 	if !ok {
 		return
 	}
@@ -112,7 +112,7 @@ func (s *Server) goldChart(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, codeNotConfigured, "giá vàng chưa được bật")
 		return
 	}
-	days, ok := s.intParam(w, r, "days", 30, 2, 3650)
+	days, ok := s.intParam(w, r, "days", domain.MaxHistoryDays, 2, domain.MaxHistoryDays)
 	if !ok {
 		return
 	}

@@ -113,7 +113,20 @@ func (m *Memory) ClaimAnnouncement(_ context.Context, day time.Time, channelID s
 	return true, nil
 }
 
+// MarkAnnounced ends the lease. The in-memory store keeps a set rather than
+// rows, so a sent announcement is simply one that is never released.
+func (m *Memory) MarkAnnounced(_ context.Context, day time.Time, channelID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// The in-memory store is only used by tests and fakecore, where a process
+	// never dies mid-send, so a claim needs no expiry here. Recording the send
+	// keeps the two stores answering the same questions.
+	m.claimed[domain.FormatISO(day)+"|"+channelID] = true
+	return nil
+}
+
 // ReleaseAnnouncement undoes a claim after a failed send.
+
 func (m *Memory) ReleaseAnnouncement(_ context.Context, day time.Time, channelID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

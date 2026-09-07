@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -51,6 +52,7 @@ func New(svc *service.Service, store storage.Store, gold Gold, log *slog.Logger)
 	s.mux.HandleFunc("PUT /v1/subscriptions/{channel_id}", s.subscribe)
 	s.mux.HandleFunc("DELETE /v1/subscriptions/{channel_id}", s.unsubscribe)
 	s.mux.HandleFunc("POST /v1/announcements/{date}/{channel_id}", s.claimAnnouncement)
+	s.mux.HandleFunc("PUT /v1/announcements/{date}/{channel_id}", s.markAnnounced)
 	s.mux.HandleFunc("DELETE /v1/announcements/{date}/{channel_id}", s.releaseAnnouncement)
 
 	return s
@@ -80,6 +82,11 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+// shutdownGrace is how long an in-flight request has to finish once the
+// process is asked to stop. Longer than a crawl, shorter than anyone waiting
+// on a container to exit will tolerate.
+const shutdownGrace = 15 * time.Second
+
 // Listen serves until ctx is cancelled, then shuts down gracefully so an
 // in-flight crawl is not cut off mid-response.
 func (s *Server) Listen(addr string, stop <-chan struct{}) error {
@@ -107,8 +114,14 @@ func (s *Server) Listen(addr string, stop <-chan struct{}) error {
 	case err := <-errs:
 		return err
 	case <-stop:
+		// Shutdown, not Close: an in-flight request is usually a crawl of a
+		// missing day, and cutting it off means the caller sees a broken
+		// connection for work that was about to succeed. The deadline stops a
+		// stuck request from holding the process open.
 		s.log.Info("core api stopping")
-		return srv.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		return srv.Shutdown(ctx)
 	}
 }
 

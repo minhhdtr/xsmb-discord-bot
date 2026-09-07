@@ -104,7 +104,17 @@ export class Announcer {
       // Give the claim back so the next run tries again rather than the day
       // being lost to a transient failure.
       await this.core.releaseAnnouncement(date, channelId).catch(() => {});
+      return;
     }
+
+    // Sent. Ending the lease here rather than at claim time is what makes a
+    // crash recoverable: a claim left unsent expires and can be taken over,
+    // while this one never will be.
+    await this.core.markAnnounced(date, channelId).catch((error: unknown) => {
+      // The message is out. Failing to record that only risks a duplicate
+      // after a crash inside the lease window, which is the lesser problem.
+      console.error(`posted to ${channelId} but could not mark it sent:`, error);
+    });
   }
 
   /** Asks core for the day until it has it, or the window closes. */
@@ -116,19 +126,45 @@ export class Announcer {
       try {
         return await this.core.draw(date);
       } catch (error) {
-        if (error instanceof CoreError && error.notYet) {
-          // Still landing. The source publishes tier by tier, so this is the
-          // ordinary case for the first several minutes.
+        if (worthRetrying(error)) {
+          // Two different reasons to wait, both temporary. `not_yet` is the
+          // ordinary one: the source publishes tier by tier, so the first
+          // several minutes after the mark look like this. A timeout or a 5xx
+          // is core being restarted or briefly unreachable — which used to
+          // lose the whole day, because any error that was not `not_yet` ended
+          // the attempt.
           if (await sleep(this.#interval, signal)) return null;
           continue;
         }
-        console.error(`cannot get ${date}:`, error);
+        console.error(`cannot get ${date}, giving up:`, error);
         return null;
       }
     }
     console.warn(`gave up on ${date} after ${Math.round(this.#window / 60_000)} minutes`);
     return null;
   }
+}
+
+/**
+ * Whether an error is worth waiting through.
+ *
+ * The split is between "not there yet" and "will never be there". A day that
+ * is settled and empty, or outside the archive, cannot be fixed by asking
+ * again; a timeout, a 5xx, or an unreachable core all can. Getting this wrong
+ * in the safe direction only costs requests inside a window that closes on its
+ * own after forty-five minutes.
+ */
+export function worthRetrying(error: unknown): boolean {
+  if (!(error instanceof CoreError)) {
+    // fetch itself failed: DNS, connection refused, the socket dropped.
+    return true;
+  }
+  if (error.notYet) return true;
+  if (error.noDraw || error.code === "out_of_range" || error.code === "bad_request") {
+    return false;
+  }
+  // 0 is a client-side failure; 5xx is core's problem and usually brief.
+  return error.status === 0 || error.status >= 500;
 }
 
 /**

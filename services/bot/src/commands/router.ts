@@ -403,7 +403,10 @@ export function parseChartArgs(args: string[]): { code: string; days: number } {
   for (const arg of args) {
     const asNumber = Number(arg);
     if (Number.isInteger(asNumber) && arg.trim() !== "" && asNumber >= 2) {
-      days = Math.min(asNumber, 3650);
+      // Not clamped here. The limit belongs to core, which knows what the
+      // source keeps; a copy of it on this side is a copy that can drift, and
+      // silently shrinking the request is the behaviour being fixed.
+      days = asNumber;
       continue;
     }
     if (arg.trim() !== "") code = arg.trim().toUpperCase();

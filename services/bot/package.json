@@ -11,7 +11,8 @@
     "build": "tsc",
     "check": "tsc --noEmit",
     "test": "tsc && node --test --test-concurrency=1 \"dist/test/*.test.js\"",
-    "start": "node dist/src/index.js"
+    "start": "node dist/src/index.js",
+    "check:api": "npm run gen:api && git diff --exit-code -- src/core/schema.d.ts"
   },
   "dependencies": {
     "discord.js": "^14.27.0",
