@@ -38,7 +38,7 @@ the column arithmetic is the part most likely to break when written a second
 time in another language. A client that would rather draw its own can ignore
 the field.
 
-**Seventeen endpoints, five of which write.** Subscriptions and announcement claims. Everything
+**Nineteen endpoints, six of which write.** Subscriptions and announcement claims. Everything
 else is a read over numbers a public website already publishes, which is why
 there is no auth — but those five change what an exposed port would cost.
 Silencing the daily announcement, or burning a claim so a result is never

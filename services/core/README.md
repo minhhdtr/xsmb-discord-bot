@@ -106,7 +106,16 @@ docker run --rm -v ${PWD}:/src -w /src golang:1.22-alpine \
 `-race` cần cgo, mà Alpine không có. Dùng `golang:1.22` (bản Debian) cho lần
 đó. Repo có nhiều goroutine nên đáng chạy một lần trước khi đụng vào chúng.
 
-Test PostgreSQL tự bỏ qua nếu không có `TEST_DATABASE_URL`.
+Test cần PostgreSQL thật tự bỏ qua nếu không có `TEST_DATABASE_URL` — nghĩa là
+chúng mục dần mà không ai biết. Lease thông báo sống hoàn toàn trong SQL và đã
+không được chạy thử suốt vì đúng lý do đó.
+
+```bash
+make pgtest
+```
+
+Nó chạy trên database `xsmb_test`, **không phải** database thật: harness gọi
+`TRUNCATE` mọi bảng nó đụng tới, trỏ nhầm là mất cả kho.
 
 ### fakecore
 

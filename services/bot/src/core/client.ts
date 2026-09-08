@@ -120,6 +120,15 @@ export class Core {
     return this.#json<Gan[]>("/v1/stats/gan" + qs({ scope, limit }));
   }
 
+  /**
+   * The ungrouped listing: one entry per number that appeared.
+   *
+   * Nothing in the bot calls this — `/thongke tanso` requires a grouping, so
+   * every command goes through `groupedFrequency`. Kept because the endpoint
+   * is in the contract and a client that could not reach half of it would be
+   * an odd thing to hand anyone; deleting the method would not delete the
+   * endpoint, only the ability to use it.
+   */
   frequency(days?: number): Promise<FrequencyList> {
     return this.#json<FrequencyList>("/v1/stats/frequency" + qs({ days }));
   }

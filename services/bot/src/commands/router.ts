@@ -501,12 +501,17 @@ export function parseGrouping(input: string): Grouping | null {
 export function parseChartArgs(args: string[]): { code: string; days: number } {
   let code = DEFAULT_GOLD_CODE;
   let days = 30;
+
   for (const arg of args) {
     const asNumber = Number(arg);
-    if (Number.isInteger(asNumber) && arg.trim() !== "" && asNumber >= 2) {
-      // Not clamped here. The limit belongs to core, which knows what the
-      // source keeps; a copy of it on this side is a copy that can drift, and
-      // silently shrinking the request is the behaviour being fixed.
+    // Anything numeric is a window, including a number too small to be one.
+    // Requiring >= 2 here made `!gold chart 1` mean "the gold code 1", and
+    // `!gold chart SJC 1` silently threw the code away - the argument that
+    // could not be a window quietly became the one thing left.
+    //
+    // Not clamped either: the limit belongs to core, which knows what the
+    // source keeps, and a copy on this side is a copy that can drift.
+    if (arg.trim() !== "" && Number.isInteger(asNumber)) {
       days = asNumber;
       continue;
     }

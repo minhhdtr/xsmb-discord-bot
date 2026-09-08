@@ -23,6 +23,23 @@ const goldPrefix = process.env.GOLD_PREFIX ?? "!gold";
 const guildId = process.env.DISCORD_GUILD_ID ?? "";
 const prefixCommands = process.env.PREFIX_COMMANDS !== "false";
 
+/**
+ * A net, not a substitute for handling errors where they happen.
+ *
+ * Node turns an unhandled rejection into exit 1. For a long-running chat
+ * client that is the wrong default: one bad channel, one Discord hiccup in a
+ * path somebody forgot to await, and the process dies - then restarts, and
+ * dies again the next time the same message arrives.
+ *
+ * The cost is that a genuine bug now logs instead of crashing, which is
+ * quieter than it deserves. So this is deliberately loud, and every path that
+ * can reject is still wrapped at the point it rejects. If this line ever
+ * starts firing regularly, something upstream of it is missing a catch.
+ */
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION - something is missing a catch:", reason);
+});
+
 const core = new Core({ baseUrl: coreUrl });
 const router = new Router(core, prefix, goldPrefix);
 const stopping = new AbortController();
@@ -95,10 +112,19 @@ if (prefixCommands) {
     // rather than an accident of ordering.
     // A boundary is required, or `!xsmbfoo` counts as `!xsmb` and the bot
     // answers a message that was never addressed to it.
-    if (addressedTo(message.content, goldPrefix)) {
-      await handleMessage(message, goldPrefix, true);
-    } else if (addressedTo(message.content, prefix)) {
-      await handleMessage(message, prefix, false);
+    try {
+      if (addressedTo(message.content, goldPrefix)) {
+        await handleMessage(message, goldPrefix, true);
+      } else if (addressedTo(message.content, prefix)) {
+        await handleMessage(message, prefix, false);
+      }
+    } catch (error) {
+      // Without this the bot dies. Node turns an unhandled rejection into
+      // exit 1, and channel.send() throws whenever the bot can see a channel
+      // but may not post in it - isSendable() checks the channel type, not the
+      // permission. With restart: unless-stopped that is a loop anybody can
+      // start by typing a command in the wrong place.
+      console.error(`${prefix} command failed:`, error);
     }
   });
 }
@@ -279,12 +305,20 @@ const announcer = new Announcer(core, async (channelId, embed) => {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     stopping.abort();
-    void client.destroy();
+    client.destroy().catch((error: unknown) => {
+      console.error("cannot close the gateway cleanly:", error);
+    });
   });
 }
 
 await client.login(token);
-void announcer.run(stopping.signal);
+
+// Catching here rather than `void`-ing the promise: an unhandled rejection
+// takes the whole process down, and the announcer runs unattended for hours.
+announcer.run(stopping.signal).catch((error: unknown) => {
+  console.error("announcer stopped:", error);
+});
+
 
 /**
  * Prefix commands carry the gold ones under a prefix of their own, so the

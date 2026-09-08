@@ -144,3 +144,17 @@ describe("subscriptions", () => {
     assert.equal(await core.claimAnnouncement("2026-08-20", channel), true);
   });
 });
+
+// Reached by no command, so nothing else would notice if the contract moved
+// under it. A client that covers the contract should be exercised across it.
+describe("ungrouped frequency", () => {
+  withCore("lists one entry per number that appeared", async () => {
+    const listing = await core.frequency(30);
+    assert.equal(listing.grouped, false);
+    assert.ok(Array.isArray(listing.entries));
+    for (const entry of listing.entries) {
+      assert.match(entry.number, /^[0-9]{2}$/);
+      assert.ok(entry.hits >= entry.days, `${entry.number}: hits < days`);
+    }
+  });
+});

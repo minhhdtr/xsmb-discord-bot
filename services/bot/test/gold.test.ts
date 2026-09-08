@@ -50,6 +50,16 @@ describe("numbers", () => {
 describe("parseChartArgs", () => {
   // Order-free for the same reason tanso is: a command nobody can remember
   // the order of is a command nobody uses.
+  // A number too small to be a window used to fall through to the code
+  // branch, so `!gold chart 1` meant "the gold code 1" and `!gold chart SJC 1`
+  // threw the code away. Anything numeric is a window now; core rejects the
+  // ones it cannot serve, with a message that says so.
+  it("treats every number as a window, even an unusable one", () => {
+    assert.deepEqual(parseChartArgs(["1"]), { code: "SJL1L10", days: 1 });
+    assert.deepEqual(parseChartArgs(["SJC", "1"]), { code: "SJC", days: 1 });
+    assert.deepEqual(parseChartArgs(["0"]), { code: "SJL1L10", days: 0 });
+  });
+
   it("reads the code and the window in either order", () => {
     assert.deepEqual(parseChartArgs(["VNGSJC", "30"]), { code: "VNGSJC", days: 30 });
     assert.deepEqual(parseChartArgs(["30", "vngsjc"]), { code: "VNGSJC", days: 30 });

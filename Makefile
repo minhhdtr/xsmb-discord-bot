@@ -5,21 +5,33 @@ FROM    ?=
 RATE    ?=
 JOBS    ?=
 
-.PHONY: help up down logs restart build test race fetch gold backfill psql stats tidy fmt
+.PHONY: help up down logs logs-core logs-bot restart restart-core restart-bot build test race pgtest fetch gold backfill psql stats tidy fmt
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-up:      ## Start PostgreSQL and the bot
+up:      ## Start PostgreSQL, core and the Discord client
 	$(COMPOSE) up -d --build
 
 down:    ## Stop everything (the data volume survives)
 	$(COMPOSE) down
 
-logs:    ## Follow the bot's logs
+logs:    ## Follow both services
+	$(COMPOSE) logs -f core bot
+
+logs-core: ## Follow core only
+	$(COMPOSE) logs -f core
+
+logs-bot: ## Follow the Discord client only
 	$(COMPOSE) logs -f bot
 
-restart: ## Rebuild and restart just the bot
+restart: ## Rebuild and restart everything
+	$(COMPOSE) up -d --build
+
+restart-core: ## Rebuild and restart core only. This is what Go changes need.
+	$(COMPOSE) up -d --build core
+
+restart-bot: ## Rebuild and restart the Discord client only
 	$(COMPOSE) up -d --build bot
 
 build:   ## Build the core binary locally
@@ -30,6 +42,11 @@ test:    ## Run the core test suite
 
 race:    ## Run the core test suite under the race detector
 	cd $(CORE) && go test -mod=vendor -race ./...
+
+pgtest:  ## Run the storage tests against a real PostgreSQL. Uses xsmb_test, never the real database.
+	@$(COMPOSE) up -d db
+	@$(COMPOSE) exec -T db sh -c 'psql -U "$${POSTGRES_USER:-xsmb}" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '"'"'xsmb_test'"'"'" | grep -q 1 || createdb -U "$${POSTGRES_USER:-xsmb}" xsmb_test'
+	$(COMPOSE) --profile tools run --rm pgtest
 
 fetch:   ## Crawl one day and print it. Needs no token, no database. make fetch DATE=14/08/2026
 	cd $(CORE) && go run -mod=vendor ./cmd/core fetch $(DATE)

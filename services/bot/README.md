@@ -75,6 +75,13 @@ thấy "The application did not respond".
 lệnh, cộng một kiểm tra lúc chạy — mặc định đó có thể bị guild ghi đè, và dạng
 gõ tay thì không thấy nó bao giờ.
 
+**Mọi đường vào đều phải bắt lỗi.** Node biến một unhandled rejection thành
+exit 1, nên một `channel.send()` hỏng là bot chết rồi khởi động lại — và bất kỳ
+ai cũng lặp lại được bằng cách gõ lệnh trong kênh bot không có quyền gửi.
+`isSendable()` không cứu: nó kiểm loại kênh, không kiểm quyền. Có một
+`process.on("unhandledRejection")` làm lưới cuối, nhưng đó là lưới chứ không
+phải cách xử lý — nó nổ ra thường xuyên nghĩa là có chỗ thiếu `catch`.
+
 **Thông báo 18h35 hỏi core, không tự crawl.** Core lo lấp kho theo lịch của
 riêng nó; việc ở đây chỉ là nhận ra. Hỏi thay vì được đẩy giữ cho phụ thuộc đi
 một chiều: bot biết core ở đâu, core không biết gì về bot. Thêm client thứ hai
